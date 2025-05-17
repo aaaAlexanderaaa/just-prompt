@@ -5,7 +5,6 @@ Main entry point for just-prompt.
 import argparse
 import asyncio
 import logging
-import os
 import sys
 from dotenv import load_dotenv
 from .server import serve
@@ -50,12 +49,10 @@ def main():
     
     # Set logging level
     logging.getLogger().setLevel(getattr(logging, args.log_level))
-    
-    # Show provider availability
-    print_provider_availability()
-    
-    # If --show-providers flag is provided, exit after showing provider info
+
+    # Show provider availability and optionally exit
     if args.show_providers:
+        print_provider_availability()
         sys.exit(0)
     
     try:
