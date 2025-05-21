@@ -64,3 +64,6 @@ prompts/responses
 .aider*
 
 focus_output/
+
+# Git worktrees
+trees/
