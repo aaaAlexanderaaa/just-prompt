@@ -11,14 +11,16 @@ class ModelProviders(Enum):
     """
     OPENAI = ("openai", "o")
     ANTHROPIC = ("anthropic", "a")
-    GEMINI = ("gemini", "g") 
+    GEMINI = ("gemini", "g")
     GROQ = ("groq", "q")
     DEEPSEEK = ("deepseek", "d")
     OLLAMA = ("ollama", "l")
+    GATEWAY = ("gateway", "gw", ("tokendance", "td", "openai-compatible", "oc", "llm"))
     
-    def __init__(self, full_name, short_name):
+    def __init__(self, full_name, short_name, aliases=()):
         self.full_name = full_name
         self.short_name = short_name
+        self.aliases = aliases
         
     @classmethod
     def from_name(cls, name):
@@ -31,7 +33,12 @@ class ModelProviders(Enum):
         Returns:
             ModelProviders: The corresponding provider enum, or None if not found
         """
+        normalized = name.strip().lower()
         for provider in cls:
-            if provider.full_name == name or provider.short_name == name:
+            if (
+                provider.full_name == normalized
+                or provider.short_name == normalized
+                or normalized in provider.aliases
+            ):
                 return provider
         return None

@@ -1,6 +1,6 @@
 # Just Prompt - A lightweight MCP server for LLM providers
 
-`just-prompt` is a Model Control Protocol (MCP) server that provides a unified interface to various Large Language Model (LLM) providers including OpenAI, Anthropic, Google Gemini, Groq, DeepSeek, and Ollama. See how we use the `ceo_and_board` tool to make [hard decisions easy with o3 here](https://youtu.be/LEMLntjfihA).
+`just-prompt` is a Model Context Protocol (MCP) server that exposes LLMs as tools. It can call a generic OpenAI-compatible model gateway, TokenDance by default, and still supports direct provider calls for OpenAI, Anthropic, Google Gemini, Groq, DeepSeek, and Ollama. See how we use the `ceo_and_board` tool to make [hard decisions easy with o3 here](https://youtu.be/LEMLntjfihA).
 
 <img src="images/just-prompt-logo.png" alt="Just Prompt Logo" width="700" height="auto">
 
@@ -11,10 +11,17 @@
 
 The following MCP tools are available in the server:
 
+- **`ask_model`**: Ask exactly one model through the configured gateway or a known provider prefix
+  - Parameters:
+    - `model`: Model ID. Unprefixed IDs are sent to the configured OpenAI-compatible gateway.
+    - `prompt`: The prompt text
+    - `options` (optional): OpenAI-compatible chat options such as `temperature`, `max_tokens`, `top_p`, `base_url`, `api_key`, and `timeout`
+
 - **`prompt`**: Send a prompt to multiple LLM models
   - Parameters:
     - `text`: The prompt text
     - `models_prefixed_by_provider` (optional): List of models with provider prefixes. If not provided, uses default models.
+    - `error_strategy` (optional): `{ "strategy": "best_effort" | "all_or_nothing" | "retry_with_backoff", "max_retries": 3, "backoff_seconds": 1 }`
 
 - **`prompt_from_file`**: Send a prompt from a file to multiple LLM models
   - Parameters:
@@ -41,8 +48,24 @@ The following MCP tools are available in the server:
   - Parameters:
     - `provider`: Provider to list models for (e.g., 'openai' or 'o')
 
+- **`list_gateway_models`**: List models from the configured gateway
+  - Parameters:
+    - `detailed` (optional): Return full records, including TokenDance `supported_protocols`, instead of just IDs
+
+- **`call_model_protocol`**: Call a documented gateway protocol endpoint for models that are not plain chat models
+  - Parameters:
+    - `model`: Model ID
+    - `protocol`: Protocol ID such as `openai:chat-completions`, `anthropic:messages`, `gemini:generate-content`, `openai:image-generations`, `openai:embeddings`, `seedance:generations`, `minimax:t2a_v2`, `zai:layout-parsing`, `unifuncs:web-search`, or `unifuncs:web-reader`
+    - `payload`: Protocol request body. The `model` field is added automatically when the protocol expects it in JSON.
+    - `options` (optional): `api_key`, `base_url`, `timeout`
+
+- **`get_model_task`**: Poll async video-generation tasks for protocols with documented task endpoints
+  - Parameters:
+    - `protocol`: Async protocol ID such as `seedance:generations` or `happyhorse:video-synthesis`
+    - `task_id`: Task ID returned by the submit call
+
 ## Provider Prefixes
-> every model must be prefixed with the provider name
+> the legacy multi-model tools use provider prefixes
 >
 > use the short name for faster referencing
 
@@ -64,6 +87,63 @@ The following MCP tools are available in the server:
 - `l` or `ollama`: Ollama 
   - `l:llama3.1`
   - `ollama:llama3.1`
+- `gw` or `gateway`: Generic OpenAI-compatible gateway (TokenDance by default)
+  - `gw:glm-4.7`
+  - `gateway:qwen3-max`
+  - aliases: `td`, `tokendance`, `oc`, `openai-compatible`
+
+## TokenDance / OpenAI-Compatible Gateway
+
+The gateway provider is the shortest path for a Model-as-Tool setup:
+
+```text
+main agent -> MCP client -> ask_model(model, prompt, options?) -> your gateway -> model
+```
+
+For TokenDance, set:
+
+```bash
+MODEL_GATEWAY_BASE_URL=https://tokendance.space/gateway/v1
+MODEL_GATEWAY_PROTOCOL_BASE_URL=https://tokendance.space/gateway
+MODEL_GATEWAY_API_KEY=your_tokendance_api_key
+```
+
+For your own OpenAI-compatible API Gateway, change only the base URL and API key:
+
+```bash
+MODEL_GATEWAY_BASE_URL=https://your-gateway.example.com/v1
+MODEL_GATEWAY_API_KEY=your_gateway_api_key
+```
+
+Use `ask_model` for text models that support `openai:chat-completions`:
+
+```json
+{
+  "model": "glm-4.7",
+  "prompt": "Summarize the tradeoffs of MCP model-as-tool wrappers.",
+  "options": { "temperature": 0.2, "max_tokens": 1024 }
+}
+```
+
+Use `call_model_protocol` for non-chat TokenDance models. Examples:
+
+```json
+{
+  "model": "qwen-text-embedding-v4",
+  "protocol": "openai:embeddings",
+  "payload": { "input": "semantic search query" }
+}
+```
+
+```json
+{
+  "model": "unifuncs-web-search",
+  "protocol": "unifuncs:web-search",
+  "payload": { "query": "Model Context Protocol", "count": 5 }
+}
+```
+
+`list_gateway_models` with `detailed=true` returns each model's `supported_protocols`, so clients can choose the right protocol instead of guessing.
 
 ## Features
 
@@ -78,7 +158,7 @@ The following MCP tools are available in the server:
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/just-prompt.git
+git clone https://github.com/disler/just-prompt.git
 cd just-prompt
 
 # Install with pip
@@ -97,6 +177,9 @@ Then edit the `.env` file to add your API keys (or export them in your shell):
 
 ```
 OPENAI_API_KEY=your_openai_api_key_here
+MODEL_GATEWAY_API_KEY=your_tokendance_or_gateway_api_key_here
+MODEL_GATEWAY_BASE_URL=https://tokendance.space/gateway/v1
+MODEL_GATEWAY_PROTOCOL_BASE_URL=https://tokendance.space/gateway
 ANTHROPIC_API_KEY=your_anthropic_api_key_here
 GEMINI_API_KEY=your_gemini_api_key_here
 GROQ_API_KEY=your_groq_api_key_here
@@ -104,10 +187,12 @@ DEEPSEEK_API_KEY=your_deepseek_api_key_here
 OLLAMA_HOST=http://localhost:11434
 ```
 
+File-based tools are restricted to the server's current working directory by default. Set `JUST_PROMPT_FILE_ROOT` or pass `--file-access-root` to allow reads and writes inside a different directory.
+
 ## Claude Code Installation
 > In all these examples, replace the directory with the path to the just-prompt directory.
 
-Default models set to `openai:o3:high`, `openai:o4-mini:high`, `anthropic:claude-opus-4-20250514`, `anthropic:claude-sonnet-4-20250514`, `gemini:gemini-2.5-pro-preview-03-25`, and `gemini:gemini-2.5-flash-preview-04-17`.
+Default models are set to the gateway provider (`gateway:glm-4.7`) unless you pass `--default-models`.
 
 If you use Claude Code right out of the repository you can see in the .mcp.json file we set the default models to...
 
@@ -123,7 +208,7 @@ If you use Claude Code right out of the repository you can see in the .mcp.json 
         "run",
         "just-prompt",
         "--default-models",
-        "openai:o3:high,openai:o4-mini:high,anthropic:claude-opus-4-20250514,anthropic:claude-sonnet-4-20250514,gemini:gemini-2.5-pro-preview-03-25,gemini:gemini-2.5-flash-preview-04-17"
+        "gateway:glm-4.7"
       ],
       "env": {}
     }
@@ -137,10 +222,10 @@ When starting the server, it will automatically check which API keys are availab
 
 ### Using `mcp add-json`
 
-Copy this and paste it into claude code with BUT don't run until you copy the json
+For Claude Code's JSON form use:
 
 ```
-claude mcp add just-prompt "$(pbpaste)"
+claude mcp add-json just-prompt "$(pbpaste)"
 ```
 
 JSON to copy
@@ -152,12 +237,12 @@ JSON to copy
 }
 ```
 
-With a custom default model set to `openai:gpt-4o`.
+With a custom default gateway model:
 
 ```
 {
     "command": "uv",
-    "args": ["--directory", ".", "run", "just-prompt", "--default-models", "openai:gpt-4o"]
+    "args": ["--directory", ".", "run", "just-prompt", "--default-models", "gateway:qwen3-max"]
 }
 ```
 
@@ -166,7 +251,7 @@ With multiple default models:
 ```
 {
     "command": "uv",
-    "args": ["--directory", ".", "run", "just-prompt", "--default-models", "openai:o3:high,openai:o4-mini:high,anthropic:claude-opus-4-20250514,anthropic:claude-sonnet-4-20250514,gemini:gemini-2.5-pro-preview-03-25,gemini:gemini-2.5-flash-preview-04-17"]
+    "args": ["--directory", ".", "run", "just-prompt", "--default-models", "gateway:glm-4.7,gateway:qwen3-max,gateway:deepseek-v3.2"]
 }
 ```
 
@@ -183,13 +268,13 @@ claude mcp add just-prompt -s project \
 claude mcp add just-prompt -s project \
   -- \
   uv --directory . \
-  run just-prompt --default-models "openai:gpt-4o"
+  run just-prompt --default-models "gateway:qwen3-max"
 
 # With multiple default models
 claude mcp add just-prompt -s user \
   -- \
   uv --directory . \
-  run just-prompt --default-models "openai:o3:high,openai:o4-mini:high,anthropic:claude-opus-4-20250514,anthropic:claude-sonnet-4-20250514,gemini:gemini-2.5-pro-preview-03-25,gemini:gemini-2.5-flash-preview-04-17"
+  run just-prompt --default-models "gateway:glm-4.7,gateway:qwen3-max,gateway:deepseek-v3.2"
 ```
 
 
@@ -228,16 +313,20 @@ uv run pytest
 │       │   ├── llm_providers/ # Individual provider implementations
 │       │   │   ├── anthropic.py
 │       │   │   ├── deepseek.py
+│       │   │   ├── gateway.py
 │       │   │   ├── gemini.py
 │       │   │   ├── groq.py
 │       │   │   ├── ollama.py
 │       │   │   └── openai.py
 │       │   └── shared/        # Shared utilities and data types
 │       │       ├── data_types.py
+│       │       ├── file_access.py
 │       │       ├── model_router.py
+│       │       ├── parameters.py
 │       │       ├── utils.py
 │       │       └── validator.py
 │       ├── molecules/         # Higher-level functionality
+│       │   ├── ask_model.py
 │       │   ├── ceo_and_board_prompt.py
 │       │   ├── list_models.py
 │       │   ├── list_providers.py

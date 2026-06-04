@@ -23,6 +23,7 @@ def test_list_providers():
     assert "GROQ" in provider_names
     assert "DEEPSEEK" in provider_names
     assert "OLLAMA" in provider_names
+    assert "GATEWAY" in provider_names
     
     # Check each provider has required fields
     for provider in providers:
@@ -49,3 +50,7 @@ def test_list_providers():
         elif provider["name"] == "OLLAMA":
             assert provider["full_name"] == "ollama"
             assert provider["short_name"] == "l"
+        elif provider["name"] == "GATEWAY":
+            assert provider["full_name"] == "gateway"
+            assert provider["short_name"] == "gw"
+            assert "tokendance" in provider["aliases"]

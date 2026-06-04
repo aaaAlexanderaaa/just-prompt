@@ -72,6 +72,16 @@ def validate_provider_api_keys() -> Dict[str, bool]:
             host = os.environ.get("OLLAMA_HOST")
             is_available = host is not None and host.strip() != ""
             available_providers[provider_name] = is_available
+        elif provider_name == "gateway":
+            api_key = get_api_key(provider_name)
+            base_url = (
+                os.environ.get("MODEL_GATEWAY_BASE_URL")
+                or os.environ.get("TOKENDANCE_BASE_URL")
+                or os.environ.get("OPENAI_COMPATIBLE_BASE_URL")
+                or os.environ.get("OPENAI_BASE_URL")
+                or "https://tokendance.space/gateway/v1"
+            )
+            available_providers[provider_name] = bool(api_key and base_url)
         else:
             # Get API key
             api_key = get_api_key(provider_name)
@@ -103,7 +113,8 @@ def print_provider_availability(detailed: bool = True) -> None:
             "gemini": "GEMINI_API_KEY", 
             "groq": "GROQ_API_KEY",
             "deepseek": "DEEPSEEK_API_KEY",
-            "ollama": "OLLAMA_HOST"
+            "ollama": "OLLAMA_HOST",
+            "gateway": "MODEL_GATEWAY_API_KEY or TOKENDANCE_API_KEY",
         }
         
         logger.warning(f"The following providers are unavailable due to missing API keys:")

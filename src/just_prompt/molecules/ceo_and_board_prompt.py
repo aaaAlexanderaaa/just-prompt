@@ -2,13 +2,14 @@
 CEO and Board prompt functionality for just-prompt.
 """
 
-from typing import List
+from typing import Any, Dict, List, Optional
 import logging
 import os
 from pathlib import Path
 from .prompt_from_file_to_file import prompt_from_file_to_file
 from .prompt import prompt
 from ..atoms.shared.utils import DEFAULT_MODEL
+from ..atoms.shared.file_access import resolve_checked_path
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,8 @@ def ceo_and_board_prompt(
     abs_output_dir: str = ".",
     models_prefixed_by_provider: List[str] = None,
     ceo_model: str = DEFAULT_CEO_MODEL,
-    ceo_decision_prompt: str = DEFAULT_CEO_DECISION_PROMPT
+    ceo_decision_prompt: str = DEFAULT_CEO_DECISION_PROMPT,
+    error_strategy: Optional[Dict[str, Any]] = None,
 ) -> str:
     """
     Read text from a file, send it as prompt to multiple 'board member' models,
@@ -60,7 +62,7 @@ def ceo_and_board_prompt(
         Path to the CEO decision file
     """
     # Validate output directory
-    output_path = Path(abs_output_dir)
+    output_path = resolve_checked_path(abs_output_dir)
     if not output_path.exists():
         output_path.mkdir(parents=True, exist_ok=True)
 
@@ -69,7 +71,8 @@ def ceo_and_board_prompt(
 
     # Get the original prompt from the file
     try:
-        with open(abs_from_file, 'r', encoding='utf-8') as f:
+        checked_input = resolve_checked_path(abs_from_file, must_exist=True)
+        with open(checked_input, 'r', encoding='utf-8') as f:
             original_prompt = f.read()
     except Exception as e:
         logger.error(f"Error reading file {abs_from_file}: {e}")
@@ -79,7 +82,8 @@ def ceo_and_board_prompt(
     board_response_files = prompt_from_file_to_file(
         abs_file_path=abs_from_file,
         models_prefixed_by_provider=models_prefixed_by_provider,
-        abs_output_dir=abs_output_dir
+        abs_output_dir=abs_output_dir,
+        error_strategy=error_strategy,
     )
 
     # Get the models that were actually used
@@ -126,7 +130,7 @@ def ceo_and_board_prompt(
         raise ValueError(f"Error writing CEO prompt: {str(e)}")
     
     # Step 5: Get the CEO decision
-    ceo_response = prompt(final_ceo_prompt, [ceo_model])[0]
+    ceo_response = prompt(final_ceo_prompt, [ceo_model], error_strategy=error_strategy)[0]
 
     # Step 6: Write the CEO decision to a file
     ceo_output_file = output_path / "ceo_decision.md"

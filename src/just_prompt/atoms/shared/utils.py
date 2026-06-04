@@ -18,7 +18,7 @@ logging.basicConfig(
 load_dotenv()
 
 # Default model constants
-DEFAULT_MODEL = "anthropic:claude-3-7-sonnet-20250219"
+DEFAULT_MODEL = "gateway:glm-4.7"
 
 
 def split_provider_and_model(model_string: str) -> Tuple[str, str]:
@@ -89,6 +89,7 @@ def get_api_key(provider: str) -> Optional[str]:
         environment variable is set
     """
     key_mapping = {
+        "gateway": "MODEL_GATEWAY_API_KEY",
         "openai": "OPENAI_API_KEY",
         "anthropic": "ANTHROPIC_API_KEY",
         "gemini": "GEMINI_API_KEY",
@@ -100,4 +101,15 @@ def get_api_key(provider: str) -> Optional[str]:
     if not env_var:
         return None
     
-    return os.environ.get(env_var)
+    value = os.environ.get(env_var)
+    if value:
+        return value
+
+    if provider == "gateway":
+        return (
+            os.environ.get("TOKENDANCE_API_KEY")
+            or os.environ.get("OPENAI_COMPATIBLE_API_KEY")
+            or os.environ.get("OPENAI_API_KEY")
+        )
+
+    return None

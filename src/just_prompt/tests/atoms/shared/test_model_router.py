@@ -27,6 +27,11 @@ def test_route_prompt(mock_import_module):
     # Test with short provider name
     response = ModelRouter.route_prompt("o:gpt-4o-mini", "What is the capital of France?")
     assert response == "Paris is the capital of France."
+
+    # Test gateway alias
+    response = ModelRouter.route_prompt("td:glm-4.7", "What is the capital of France?")
+    assert response == "Paris is the capital of France."
+    mock_import_module.assert_called_with("just_prompt.atoms.llm_providers.gateway")
     
     # Test invalid provider
     with pytest.raises(ValueError):
@@ -49,6 +54,10 @@ def test_route_list_models(mock_import_module):
     
     # Test with short provider name
     models = ModelRouter.route_list_models("o")
+    assert models == ["model1", "model2"]
+
+    # Test gateway alias
+    models = ModelRouter.route_list_models("td")
     assert models == ["model1", "model2"]
     
     # Test invalid provider
@@ -89,5 +98,4 @@ def test_validate_and_correct_claude4_models():
     
     result = ModelRouter.validate_and_correct_model("anthropic", "claude-opus-4-20250514")
     assert result == "claude-opus-4-20250514", f"Expected bypass for claude-4 model, got {result}"
-
 

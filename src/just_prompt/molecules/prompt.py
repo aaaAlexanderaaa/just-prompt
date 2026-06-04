@@ -2,18 +2,51 @@
 Prompt functionality for just-prompt.
 """
 
-from typing import List
+from typing import Any, Dict, List, Optional
 import logging
 import concurrent.futures
 import os
+import time
 from ..atoms.shared.validator import validate_models_prefixed_by_provider
 from ..atoms.shared.utils import split_provider_and_model, DEFAULT_MODEL
 from ..atoms.shared.model_router import ModelRouter
+from ..atoms.shared.data_types import ModelProviders
 
 logger = logging.getLogger(__name__)
 
 
-def _process_model_prompt(model_string: str, text: str) -> str:
+def _error_strategy_config(error_strategy: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Normalize error handling options while preserving the old best-effort default.
+    """
+    config = dict(error_strategy or {})
+    strategy = str(config.get("strategy") or os.environ.get("ERROR_STRATEGY") or "best_effort")
+    strategy = strategy.strip().lower().replace("-", "_")
+
+    if strategy not in {"best_effort", "all_or_nothing", "retry_with_backoff"}:
+        raise ValueError(
+            "error_strategy.strategy must be one of: best_effort, all_or_nothing, retry_with_backoff"
+        )
+
+    max_retries = int(config.get("max_retries", os.environ.get("MAX_RETRIES", 0)))
+    if strategy == "retry_with_backoff" and max_retries < 1:
+        max_retries = 3
+
+    return {
+        "strategy": strategy,
+        "max_retries": max(0, max_retries),
+        "backoff_seconds": float(config.get("backoff_seconds", os.environ.get("BASE_DELAY", 1.0))),
+    }
+
+
+def _process_model_prompt(
+    model_string: str,
+    text: str,
+    *,
+    max_retries: int = 0,
+    backoff_seconds: float = 1.0,
+    raise_on_error: bool = False,
+) -> str:
     """
     Process a single model prompt.
     
@@ -24,11 +57,21 @@ def _process_model_prompt(model_string: str, text: str) -> str:
     Returns:
         Response from the model
     """
-    try:
-        return ModelRouter.route_prompt(model_string, text)
-    except Exception as e:
-        logger.error(f"Error processing prompt for {model_string}: {e}")
-        return f"Error ({model_string}): {str(e)}"
+    attempt = 0
+    while True:
+        try:
+            return ModelRouter.route_prompt(model_string, text)
+        except Exception as e:
+            logger.error(f"Error processing prompt for {model_string}: {e}")
+            if attempt >= max_retries:
+                if raise_on_error:
+                    raise
+                return f"Error ({model_string}): {str(e)}"
+
+            delay = backoff_seconds * (2 ** attempt)
+            logger.info("Retrying %s after %.2fs", model_string, delay)
+            time.sleep(delay)
+            attempt += 1
 
 
 def _correct_model_name(provider: str, model: str, correction_model: str) -> str:
@@ -44,13 +87,20 @@ def _correct_model_name(provider: str, model: str, correction_model: str) -> str
         Corrected model name
     """
     try:
+        provider_enum = ModelProviders.from_name(provider)
+        if provider_enum and provider_enum.full_name == "gateway":
+            return model
         return ModelRouter.magic_model_correction(provider, model, correction_model)
     except Exception as e:
         logger.error(f"Error correcting model name {provider}:{model}: {e}")
         return model
 
 
-def prompt(text: str, models_prefixed_by_provider: List[str] = None) -> List[str]:
+def prompt(
+    text: str,
+    models_prefixed_by_provider: List[str] = None,
+    error_strategy: Optional[Dict[str, Any]] = None,
+) -> List[str]:
     """
     Send a prompt to multiple models using parallel processing.
     
@@ -58,6 +108,7 @@ def prompt(text: str, models_prefixed_by_provider: List[str] = None) -> List[str
         text: The prompt text
         models_prefixed_by_provider: List of model strings in format "provider:model"
                                     If None, uses the DEFAULT_MODELS environment variable
+        error_strategy: Optional object with strategy, max_retries, and backoff_seconds
         
     Returns:
         List of responses from the models
@@ -68,6 +119,7 @@ def prompt(text: str, models_prefixed_by_provider: List[str] = None) -> List[str
         models_prefixed_by_provider = [model.strip() for model in default_models.split(",")]
     # Validate model strings
     validate_models_prefixed_by_provider(models_prefixed_by_provider)
+    strategy_config = _error_strategy_config(error_strategy)
     
     # Prepare corrected model strings
     corrected_models = []
@@ -91,9 +143,25 @@ def prompt(text: str, models_prefixed_by_provider: List[str] = None) -> List[str
     with concurrent.futures.ThreadPoolExecutor() as executor:
         # Submit all tasks
         future_to_model = {
-            executor.submit(_process_model_prompt, model_string, text): model_string
+            executor.submit(
+                _process_model_prompt,
+                model_string,
+                text,
+                max_retries=strategy_config["max_retries"],
+                backoff_seconds=strategy_config["backoff_seconds"],
+                raise_on_error=strategy_config["strategy"] == "all_or_nothing",
+            ): model_string
             for model_string in corrected_models
         }
+
+        if strategy_config["strategy"] == "all_or_nothing":
+            try:
+                for future in concurrent.futures.as_completed(future_to_model):
+                    future.result()
+            except Exception:
+                for future in future_to_model:
+                    future.cancel()
+                raise
         
         # Collect results in order
         for model_string in corrected_models:

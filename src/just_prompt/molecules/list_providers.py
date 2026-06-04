@@ -21,7 +21,8 @@ def list_providers() -> List[Dict[str, str]]:
         providers.append({
             "name": provider.name,
             "full_name": provider.full_name,
-            "short_name": provider.short_name
+            "short_name": provider.short_name,
+            "aliases": ", ".join(provider.aliases)
         })
     
     return providers

@@ -56,11 +56,12 @@ def list_gemini_models():
 
 
 def list_deepseek_models():
+    import os
     from openai import OpenAI
 
     # for backward compatibility, you can still use `https://api.deepseek.com/v1` as `base_url`.
     client = OpenAI(
-        api_key="sk-ds-3f422175ff114212a42d7107c3efd1e4",  # fake
+        api_key=os.environ.get("DEEPSEEK_API_KEY"),
         base_url="https://api.deepseek.com",
     )
     print(client.models.list())

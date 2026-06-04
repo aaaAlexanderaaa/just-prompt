@@ -1,7 +1,7 @@
 Below is a review of the changes with observations on potential issues, bugs, and improvements:
 
 1. Hardcoded API key in list_deepseek_models  
- • Issue: The Deepseek function uses a hardcoded API key ("sk-ds-3f422175ff114212a42d7107c3efd1e4"). This exposes sensitive credentials in the source code.  
+ • Issue: The Deepseek function uses a hardcoded API key ("<redacted-deepseek-api-key>"). This exposes sensitive credentials in the source code.
  • Recommendation: Retrieve the key from an environment variable (or a secure vault) as is done for other models.  
  • Severity: 🚨 Critical
 

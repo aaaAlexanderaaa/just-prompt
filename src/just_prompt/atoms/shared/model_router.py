@@ -28,6 +28,9 @@ class ModelRouter:
         Returns:
             Validated and potentially corrected model name
         """
+        if provider_name == "gateway":
+            return model_name
+
         # Early return for our thinking token models to bypass validation
         thinking_models = [
             "claude-3-7-sonnet-20250219",
@@ -94,9 +97,7 @@ class ModelRouter:
             raise ValueError(f"Unknown provider prefix: {provider_prefix}")
 
         # Validate and potentially correct the model name
-        validated_model = ModelRouter.validate_and_correct_model(
-            provider.full_name, model
-        )
+        validated_model = ModelRouter.validate_and_correct_model(provider.full_name, model)
 
         # Import the appropriate provider module
         try:

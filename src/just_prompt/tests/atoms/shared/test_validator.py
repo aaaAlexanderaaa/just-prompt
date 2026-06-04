@@ -19,6 +19,7 @@ def test_validate_models_prefixed_by_provider():
     assert validate_models_prefixed_by_provider(["openai:gpt-4o-mini"]) == True
     assert validate_models_prefixed_by_provider(["anthropic:claude-3-5-haiku"]) == True
     assert validate_models_prefixed_by_provider(["o:gpt-4o-mini", "a:claude-3-5-haiku"]) == True
+    assert validate_models_prefixed_by_provider(["gateway:glm-4.7", "td:qwen3-max"]) == True
     
     # Invalid model strings
     with pytest.raises(ValueError):
@@ -38,6 +39,8 @@ def test_validate_provider():
     assert validate_provider("anthropic") == True
     assert validate_provider("o") == True
     assert validate_provider("a") == True
+    assert validate_provider("gateway") == True
+    assert validate_provider("td") == True
     
     # Invalid providers
     with pytest.raises(ValueError):
@@ -73,7 +76,7 @@ def test_validate_provider_api_keys():
         assert "ollama" in availability
         
         # Make sure all providers are included in the result
-        assert set(availability.keys()) == {"openai", "anthropic", "gemini", "groq", "deepseek", "ollama"}
+        assert set(availability.keys()) == {"openai", "anthropic", "gemini", "groq", "deepseek", "ollama", "gateway"}
 
 
 def test_validate_provider_api_keys_none():
@@ -85,7 +88,7 @@ def test_validate_provider_api_keys_none():
         
         # Check that all providers are marked as unavailable
         assert all(status is False for status in availability.values())
-        assert set(availability.keys()) == {"openai", "anthropic", "gemini", "groq", "deepseek", "ollama"}
+        assert set(availability.keys()) == {"openai", "anthropic", "gemini", "groq", "deepseek", "ollama", "gateway"}
 
 
 def test_print_provider_availability():

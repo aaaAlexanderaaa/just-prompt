@@ -6,7 +6,7 @@ This is a synthesized analysis combining insights from multiple LLM reviews of t
 ## Critical Issues
 
 ### 1. 🚨 Hardcoded API Key (DeepSeek)
-**Description**: The `list_deepseek_models()` function contains a hardcoded API key (`"sk-ds-3f422175ff114212a42d7107c3efd1e4"`).
+**Description**: The `list_deepseek_models()` function contains a hardcoded API key (`"<redacted-deepseek-api-key>"`).
 **Impact**: Major security vulnerability that could lead to unauthorized API usage and charges.
 **Solution**: Use environment variables instead:
 ```python

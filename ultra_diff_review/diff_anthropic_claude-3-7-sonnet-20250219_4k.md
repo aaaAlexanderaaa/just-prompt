@@ -12,7 +12,7 @@ I've analyzed the changes made to the `list_models.py` file. The diff shows a co
 ## Issues and Improvements
 
 ### 1. Hardcoded API Key
-The `list_deepseek_models()` function contains a hardcoded API key: `"sk-ds-3f422175ff114212a42d7107c3efd1e4"`. This is a significant security risk as API keys should never be stored in source code.
+The `list_deepseek_models()` function contains a hardcoded API key: `"<redacted-deepseek-api-key>"`. This is a significant security risk as API keys should never be stored in source code.
 
 ### 2. Inconsistent Environment Variable Usage
 Most functions use environment variables for API keys, but the DeepSeek function does not follow this pattern.

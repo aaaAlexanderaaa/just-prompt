@@ -57,7 +57,8 @@ class TestCEOAndBoardPrompt:
         mock_prompt_from_file_to_file.assert_called_once_with(
             abs_file_path=input_file,
             models_prefixed_by_provider=["a:claude-3", "o:gpt-4o"],
-            abs_output_dir=str(tmpdir)
+            abs_output_dir=str(tmpdir),
+            error_strategy=None,
         )
         
         # Check that the CEO model was called with the right prompt
@@ -125,7 +126,8 @@ class TestCEOAndBoardPrompt:
         mock_prompt_from_file_to_file.assert_called_once_with(
             abs_file_path=input_file,
             models_prefixed_by_provider=None,
-            abs_output_dir=str(tmpdir)
+            abs_output_dir=str(tmpdir),
+            error_strategy=None,
         )
         
         # Check that the default CEO model was used

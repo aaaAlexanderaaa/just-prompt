@@ -110,7 +110,7 @@ index aebb141..0c11e9b 100644
 -# from openai import OpenAI
 +    # for backward compatibility, you can still use `https://api.deepseek.com/v1` as `base_url`.
 +    client = OpenAI(
-+        api_key="sk-ds-3f422175ff114212a42d7107c3efd1e4",
++        api_key="<redacted-deepseek-api-key>",
 +        base_url="https://api.deepseek.com",
 +    )
 +    print(client.models.list())

@@ -2,16 +2,20 @@
 Prompt from file functionality for just-prompt.
 """
 
-from typing import List
+from typing import Any, Dict, List, Optional
 import logging
-import os
 from pathlib import Path
 from .prompt import prompt
+from ..atoms.shared.file_access import resolve_checked_path
 
 logger = logging.getLogger(__name__)
 
 
-def prompt_from_file(abs_file_path: str, models_prefixed_by_provider: List[str] = None) -> List[str]:
+def prompt_from_file(
+    abs_file_path: str,
+    models_prefixed_by_provider: List[str] = None,
+    error_strategy: Optional[Dict[str, Any]] = None,
+) -> List[str]:
     """
     Read text from a file and send it as a prompt to multiple models.
     
@@ -23,7 +27,7 @@ def prompt_from_file(abs_file_path: str, models_prefixed_by_provider: List[str] 
     Returns:
         List of responses from the models
     """
-    file_path = Path(abs_file_path)
+    file_path = resolve_checked_path(abs_file_path, must_exist=True)
     
     # Validate file
     if not file_path.exists():
@@ -41,4 +45,4 @@ def prompt_from_file(abs_file_path: str, models_prefixed_by_provider: List[str] 
         raise ValueError(f"Error reading file: {str(e)}")
     
     # Send prompt with file content
-    return prompt(text, models_prefixed_by_provider)
+    return prompt(text, models_prefixed_by_provider, error_strategy=error_strategy)

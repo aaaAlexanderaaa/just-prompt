@@ -171,11 +171,15 @@ def list_models() -> List[str]:
         models = []
         available_models = client.models.list()
         for m in available_models:
-            # Check if the model supports content generation
-            if hasattr(m, 'supported_generation_methods') and "generateContent" in m.supported_generation_methods:
+            supported_actions = getattr(
+                m,
+                "supported_actions",
+                getattr(m, "supported_generation_methods", None),
+            )
+            if supported_actions and "generateContent" in supported_actions:
                 models.append(m.name)
-            else:
-                # If supported_generation_methods is not available, include all models
+            elif supported_actions is None:
+                # Older SDK objects may not expose capability metadata.
                 models.append(m.name)
                 
         # Format model names - strip the "models/" prefix if present

@@ -2,18 +2,22 @@
 Prompt from file to file functionality for just-prompt.
 """
 
-from typing import List
+from typing import Any, Dict, List, Optional
 import logging
 import os
 from pathlib import Path
 from .prompt_from_file import prompt_from_file
 from ..atoms.shared.utils import DEFAULT_MODEL
+from ..atoms.shared.file_access import resolve_checked_path
 
 logger = logging.getLogger(__name__)
 
 
 def prompt_from_file_to_file(
-    abs_file_path: str, models_prefixed_by_provider: List[str] = None, abs_output_dir: str = "."
+    abs_file_path: str,
+    models_prefixed_by_provider: List[str] = None,
+    abs_output_dir: str = ".",
+    error_strategy: Optional[Dict[str, Any]] = None,
 ) -> List[str]:
     """
     Read text from a file, send it as prompt to multiple models, and save responses to files.
@@ -28,7 +32,7 @@ def prompt_from_file_to_file(
         List of paths to the output files
     """
     # Validate output directory
-    output_path = Path(abs_output_dir)
+    output_path = resolve_checked_path(abs_output_dir)
     if not output_path.exists():
         output_path.mkdir(parents=True, exist_ok=True)
 
@@ -39,7 +43,11 @@ def prompt_from_file_to_file(
     input_file_name = Path(abs_file_path).stem
 
     # Get responses
-    responses = prompt_from_file(abs_file_path, models_prefixed_by_provider)
+    responses = prompt_from_file(
+        abs_file_path,
+        models_prefixed_by_provider,
+        error_strategy=error_strategy,
+    )
 
     # Save responses to files
     output_files = []

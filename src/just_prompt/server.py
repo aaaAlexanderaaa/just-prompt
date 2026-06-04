@@ -3,10 +3,11 @@ MCP server for just-prompt.
 """
 
 import asyncio
+import json
 import logging
 import os
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import Tool, TextContent
@@ -19,6 +20,16 @@ from .molecules.prompt_from_file_to_file import prompt_from_file_to_file
 from .molecules.ceo_and_board_prompt import ceo_and_board_prompt, DEFAULT_CEO_MODEL
 from .molecules.list_providers import list_providers as list_providers_func
 from .molecules.list_models import list_models as list_models_func
+from .molecules.ask_model import (
+    ask_model,
+    call_model_protocol,
+    get_model_task,
+    list_gateway_model_details,
+)
+from .atoms.shared.parameters import (
+    parse_json_array_parameter,
+    parse_json_object_parameter,
+)
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -32,33 +43,112 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+SENSITIVE_ARGUMENT_KEYS = {
+    "api_key",
+    "authorization",
+    "content",
+    "input",
+    "messages",
+    "password",
+    "payload",
+    "prompt",
+    "secret",
+    "text",
+    "token",
+}
+
+PATH_ARGUMENT_KEYS = {"abs_file_path", "abs_output_dir", "file_path", "output_dir"}
+
+
+def _summarize_for_log(value: Any) -> Any:
+    if isinstance(value, str):
+        return value if len(value) <= 120 else f"<string len={len(value)}>"
+    if isinstance(value, list):
+        return f"<list len={len(value)}>"
+    if isinstance(value, dict):
+        return f"<object keys={sorted(value.keys())}>"
+    return value
+
+
+def _redacted_tool_arguments(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    redacted = {}
+    for key, value in arguments.items():
+        normalized = key.lower()
+        if normalized in PATH_ARGUMENT_KEYS:
+            redacted[key] = "<path redacted>"
+        elif normalized == "options":
+            if isinstance(value, dict):
+                redacted[key] = {
+                    option_key: (
+                        "<redacted>"
+                        if option_key.lower() in SENSITIVE_ARGUMENT_KEYS
+                        or "key" in option_key.lower()
+                        or "secret" in option_key.lower()
+                        or "token" in option_key.lower()
+                        else _summarize_for_log(option_value)
+                    )
+                    for option_key, option_value in value.items()
+                }
+            else:
+                redacted[key] = "<redacted options>"
+        elif (
+            normalized in SENSITIVE_ARGUMENT_KEYS
+            or "key" in normalized
+            or "secret" in normalized
+            or "token" in normalized
+        ):
+            redacted[key] = "<redacted>"
+        else:
+            redacted[key] = _summarize_for_log(value)
+    return redacted
+
+
 # Tool names enum
 class JustPromptTools:
+    ASK_MODEL = "ask_model"
     PROMPT = "prompt"
     PROMPT_FROM_FILE = "prompt_from_file"
     PROMPT_FROM_FILE_TO_FILE = "prompt_from_file_to_file"
     CEO_AND_BOARD = "ceo_and_board"
     LIST_PROVIDERS = "list_providers"
     LIST_MODELS = "list_models"
+    LIST_GATEWAY_MODELS = "list_gateway_models"
+    CALL_MODEL_PROTOCOL = "call_model_protocol"
+    GET_MODEL_TASK = "get_model_task"
 
 # Schema classes for MCP tools
 class PromptSchema(BaseModel):
     text: str = Field(..., description="The prompt text")
-    models_prefixed_by_provider: Optional[List[str]] = Field(
+    models_prefixed_by_provider: Optional[Union[List[str], str]] = Field(
         None, 
         description="List of models with provider prefixes (e.g., 'openai:gpt-4o' or 'o:gpt-4o'). If not provided, uses default models."
+    )
+    error_strategy: Optional[Union[Dict[str, Any], str]] = Field(
+        None,
+        description="Optional error handling object: strategy best_effort, all_or_nothing, or retry_with_backoff; max_retries; backoff_seconds.",
+    )
+
+
+class AskModelSchema(BaseModel):
+    model: str = Field(..., description="Model ID. Unprefixed IDs are sent to the configured OpenAI-compatible gateway.")
+    prompt: str = Field(..., description="Prompt text to send to the model")
+    options: Optional[Union[Dict[str, Any], str]] = Field(
+        None,
+        description="Optional OpenAI-compatible chat options such as temperature, max_tokens, top_p, stream, api_key, base_url, timeout.",
     )
 
 class PromptFromFileSchema(BaseModel):
     abs_file_path: str = Field(..., description="Absolute path to the file containing the prompt (must be an absolute path, not relative)")
-    models_prefixed_by_provider: Optional[List[str]] = Field(
+    models_prefixed_by_provider: Optional[Union[List[str], str]] = Field(
         None, 
         description="List of models with provider prefixes (e.g., 'openai:gpt-4o' or 'o:gpt-4o'). If not provided, uses default models."
     )
+    error_strategy: Optional[Union[Dict[str, Any], str]] = Field(None, description="Optional error handling object")
 
 class PromptFromFileToFileSchema(BaseModel):
     abs_file_path: str = Field(..., description="Absolute path to the file containing the prompt (must be an absolute path, not relative)")
-    models_prefixed_by_provider: Optional[List[str]] = Field(
+    models_prefixed_by_provider: Optional[Union[List[str], str]] = Field(
         None, 
         description="List of models with provider prefixes (e.g., 'openai:gpt-4o' or 'o:gpt-4o'). If not provided, uses default models."
     )
@@ -66,16 +156,43 @@ class PromptFromFileToFileSchema(BaseModel):
         default=".", 
         description="Absolute directory path to save the response files to (must be an absolute path, not relative. Default: current directory)"
     )
+    error_strategy: Optional[Union[Dict[str, Any], str]] = Field(None, description="Optional error handling object")
 
 class ListProvidersSchema(BaseModel):
     pass
 
 class ListModelsSchema(BaseModel):
     provider: str = Field(..., description="Provider to list models for (e.g., 'openai' or 'o')")
+
+
+class ListGatewayModelsSchema(BaseModel):
+    detailed: bool = Field(False, description="Return full gateway model records instead of only model IDs")
+
+
+class CallModelProtocolSchema(BaseModel):
+    model: str = Field(..., description="Model ID from the gateway model list")
+    protocol: str = Field(
+        default="openai:chat-completions",
+        description="Protocol ID, e.g. openai:chat-completions, anthropic:messages, gemini:generate-content, openai:image-generations, seedance:generations.",
+    )
+    payload: Optional[Union[Dict[str, Any], str]] = Field(
+        None,
+        description="Protocol request body. The model field is added automatically unless the protocol embeds it in the URL.",
+    )
+    options: Optional[Union[Dict[str, Any], str]] = Field(
+        None,
+        description="Optional gateway call options: api_key, base_url, timeout.",
+    )
+
+
+class GetModelTaskSchema(BaseModel):
+    protocol: str = Field(..., description="Async protocol ID such as seedance:generations or happyhorse:video-synthesis")
+    task_id: str = Field(..., description="Task ID returned by the async submit call")
+    options: Optional[Union[Dict[str, Any], str]] = Field(None, description="Optional gateway call options: api_key, base_url, timeout")
     
 class CEOAndBoardSchema(BaseModel):
     abs_file_path: str = Field(..., description="Absolute path to the file containing the prompt (must be an absolute path, not relative)")
-    models_prefixed_by_provider: Optional[List[str]] = Field(
+    models_prefixed_by_provider: Optional[Union[List[str], str]] = Field(
         None, 
         description="List of models with provider prefixes to act as board members. If not provided, uses default models."
     )
@@ -87,6 +204,7 @@ class CEOAndBoardSchema(BaseModel):
         default=DEFAULT_CEO_MODEL,
         description="Model to use for the CEO decision in format 'provider:model'"
     )
+    error_strategy: Optional[Union[Dict[str, Any], str]] = Field(None, description="Optional error handling object")
 
 
 async def serve(default_models: str = DEFAULT_MODEL) -> None:
@@ -120,6 +238,11 @@ async def serve(default_models: str = DEFAULT_MODEL) -> None:
         """Register all available tools with the MCP server."""
         return [
             Tool(
+                name=JustPromptTools.ASK_MODEL,
+                description="Ask exactly one model. Unprefixed model IDs are sent to the configured OpenAI-compatible gateway (TokenDance by default).",
+                inputSchema=AskModelSchema.schema(),
+            ),
+            Tool(
                 name=JustPromptTools.PROMPT,
                 description="Send a prompt to multiple LLM models",
                 inputSchema=PromptSchema.schema(),
@@ -149,17 +272,41 @@ async def serve(default_models: str = DEFAULT_MODEL) -> None:
                 description="List all available models for a specific LLM provider",
                 inputSchema=ListModelsSchema.schema(),
             ),
+            Tool(
+                name=JustPromptTools.LIST_GATEWAY_MODELS,
+                description="List models exposed by the configured OpenAI-compatible gateway, including TokenDance supported_protocols when detailed=true.",
+                inputSchema=ListGatewayModelsSchema.schema(),
+            ),
+            Tool(
+                name=JustPromptTools.CALL_MODEL_PROTOCOL,
+                description="Call a documented TokenDance/gateway protocol endpoint for chat, embeddings, images, video, speech, OCR, search, or web reader models.",
+                inputSchema=CallModelProtocolSchema.schema(),
+            ),
+            Tool(
+                name=JustPromptTools.GET_MODEL_TASK,
+                description="Poll an async video generation task for protocols that return task IDs.",
+                inputSchema=GetModelTaskSchema.schema(),
+            ),
         ]
     
     @server.call_tool()
     async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
         """Handle tool calls from the MCP client."""
-        logger.info(f"Tool call: {name}, arguments: {arguments}")
+        logger.info("Tool call: %s, arguments: %s", name, _redacted_tool_arguments(arguments))
         
         try:
-            if name == JustPromptTools.PROMPT:
-                models_to_use = arguments.get("models_prefixed_by_provider")
-                responses = prompt(arguments["text"], models_to_use)
+            if name == JustPromptTools.ASK_MODEL:
+                options = parse_json_object_parameter(arguments.get("options"), "options")
+                response = ask_model(arguments["model"], arguments["prompt"], options)
+                return [TextContent(type="text", text=response)]
+
+            elif name == JustPromptTools.PROMPT:
+                models_to_use = parse_json_array_parameter(
+                    arguments.get("models_prefixed_by_provider"),
+                    "models_prefixed_by_provider",
+                )
+                error_strategy = parse_json_object_parameter(arguments.get("error_strategy"), "error_strategy")
+                responses = prompt(arguments["text"], models_to_use, error_strategy=error_strategy)
                 
                 # Get the model names that were actually used
                 models_used = models_to_use if models_to_use else [model.strip() for model in os.environ.get("DEFAULT_MODELS", DEFAULT_MODEL).split(",")]
@@ -171,8 +318,16 @@ async def serve(default_models: str = DEFAULT_MODEL) -> None:
                 )]
                 
             elif name == JustPromptTools.PROMPT_FROM_FILE:
-                models_to_use = arguments.get("models_prefixed_by_provider")
-                responses = prompt_from_file(arguments["abs_file_path"], models_to_use)
+                models_to_use = parse_json_array_parameter(
+                    arguments.get("models_prefixed_by_provider"),
+                    "models_prefixed_by_provider",
+                )
+                error_strategy = parse_json_object_parameter(arguments.get("error_strategy"), "error_strategy")
+                responses = prompt_from_file(
+                    arguments["abs_file_path"],
+                    models_to_use,
+                    error_strategy=error_strategy,
+                )
                 
                 # Get the model names that were actually used
                 models_used = models_to_use if models_to_use else [model.strip() for model in os.environ.get("DEFAULT_MODELS", DEFAULT_MODEL).split(",")]
@@ -185,11 +340,16 @@ async def serve(default_models: str = DEFAULT_MODEL) -> None:
                 
             elif name == JustPromptTools.PROMPT_FROM_FILE_TO_FILE:
                 output_dir = arguments.get("abs_output_dir", ".")
-                models_to_use = arguments.get("models_prefixed_by_provider")
+                models_to_use = parse_json_array_parameter(
+                    arguments.get("models_prefixed_by_provider"),
+                    "models_prefixed_by_provider",
+                )
+                error_strategy = parse_json_object_parameter(arguments.get("error_strategy"), "error_strategy")
                 file_paths = prompt_from_file_to_file(
                     arguments["abs_file_path"], 
                     models_to_use,
-                    output_dir
+                    output_dir,
+                    error_strategy=error_strategy,
                 )
                 return [TextContent(
                     type="text",
@@ -200,7 +360,8 @@ async def serve(default_models: str = DEFAULT_MODEL) -> None:
                 providers = list_providers_func()
                 provider_text = "\nAvailable Providers:\n"
                 for provider in providers:
-                    provider_text += f"- {provider['name']}: full_name='{provider['full_name']}', short_name='{provider['short_name']}'\n"
+                    alias_text = f", aliases='{provider['aliases']}'" if provider.get("aliases") else ""
+                    provider_text += f"- {provider['name']}: full_name='{provider['full_name']}', short_name='{provider['short_name']}'{alias_text}\n"
                 return [TextContent(
                     type="text",
                     text=provider_text
@@ -213,18 +374,51 @@ async def serve(default_models: str = DEFAULT_MODEL) -> None:
                     text=f"Models for provider '{arguments['provider']}':\n" + 
                          "\n".join([f"- {model}" for model in models])
                 )]
+
+            elif name == JustPromptTools.LIST_GATEWAY_MODELS:
+                detailed = bool(arguments.get("detailed", False))
+                records = list_gateway_model_details()
+                text = (
+                    json.dumps(records, ensure_ascii=False, indent=2)
+                    if detailed
+                    else "\n".join([str(record.get("id")) for record in records if "id" in record])
+                )
+                return [TextContent(type="text", text=text)]
+
+            elif name == JustPromptTools.CALL_MODEL_PROTOCOL:
+                payload = parse_json_object_parameter(arguments.get("payload"), "payload")
+                options = parse_json_object_parameter(arguments.get("options"), "options")
+                response = call_model_protocol(
+                    arguments["model"],
+                    arguments.get("protocol", "openai:chat-completions"),
+                    payload=payload,
+                    options=options,
+                )
+                text = response if isinstance(response, str) else json.dumps(response, ensure_ascii=False, indent=2)
+                return [TextContent(type="text", text=text)]
+
+            elif name == JustPromptTools.GET_MODEL_TASK:
+                options = parse_json_object_parameter(arguments.get("options"), "options")
+                response = get_model_task(arguments["protocol"], arguments["task_id"], options=options)
+                text = response if isinstance(response, str) else json.dumps(response, ensure_ascii=False, indent=2)
+                return [TextContent(type="text", text=text)]
                 
             elif name == JustPromptTools.CEO_AND_BOARD:
                 file_path = arguments["abs_file_path"]
                 output_dir = arguments.get("abs_output_dir", ".")
-                models_to_use = arguments.get("models_prefixed_by_provider")
+                models_to_use = parse_json_array_parameter(
+                    arguments.get("models_prefixed_by_provider"),
+                    "models_prefixed_by_provider",
+                )
                 ceo_model = arguments.get("ceo_model", DEFAULT_CEO_MODEL)
+                error_strategy = parse_json_object_parameter(arguments.get("error_strategy"), "error_strategy")
                 
                 ceo_decision_file = ceo_and_board_prompt(
                     abs_from_file=file_path,
                     abs_output_dir=output_dir,
                     models_prefixed_by_provider=models_to_use,
-                    ceo_model=ceo_model
+                    ceo_model=ceo_model,
+                    error_strategy=error_strategy,
                 )
                 
                 # Get the CEO prompt file path

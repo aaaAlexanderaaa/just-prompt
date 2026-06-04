@@ -14,17 +14,12 @@ basic functionality (and our tests) still work.
 """
 
 import os
-import re
 import logging
 from typing import List, Tuple
 
 from dotenv import load_dotenv
 
-# Third‑party import guarded so that static analysis still works when the SDK
-# is absent.
 from openai import OpenAI  # type: ignore
-import logging
-from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
