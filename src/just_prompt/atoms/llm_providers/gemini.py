@@ -4,7 +4,7 @@ Google Gemini provider implementation.
 
 import os
 import re
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 import logging
 from dotenv import load_dotenv
 from google import genai
@@ -15,8 +15,17 @@ load_dotenv()
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# Initialize Gemini client
-client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+client: Optional[genai.Client] = None
+
+
+def _get_client() -> genai.Client:
+    global client
+    if client is None:
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            raise ValueError("Missing GEMINI_API_KEY for the Gemini provider.")
+        client = genai.Client(api_key=api_key)
+    return client
 
 # Models that support thinking_budget
 THINKING_ENABLED_MODELS = ["gemini-2.5-flash-preview-04-17"]
@@ -106,7 +115,7 @@ def prompt_with_thinking(text: str, model: str, thinking_budget: int) -> str:
     try:
         logger.info(f"Sending prompt to Gemini model {model} with thinking budget {thinking_budget}")
         
-        response = client.models.generate_content(
+        response = _get_client().models.generate_content(
             model=model,
             contents=text,
             config=genai.types.GenerateContentConfig(
@@ -146,7 +155,7 @@ def prompt(text: str, model: str) -> str:
     try:
         logger.info(f"Sending prompt to Gemini model: {base_model}")
         
-        response = client.models.generate_content(
+        response = _get_client().models.generate_content(
             model=base_model,
             contents=text
         )
@@ -169,7 +178,7 @@ def list_models() -> List[str]:
         
         # Get the list of models using the correct API method
         models = []
-        available_models = client.models.list()
+        available_models = _get_client().models.list()
         for m in available_models:
             supported_actions = getattr(
                 m,

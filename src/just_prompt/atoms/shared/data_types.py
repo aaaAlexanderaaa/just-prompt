@@ -15,7 +15,7 @@ class ModelProviders(Enum):
     GROQ = ("groq", "q")
     DEEPSEEK = ("deepseek", "d")
     OLLAMA = ("ollama", "l")
-    GATEWAY = ("gateway", "gw", ("tokendance", "td", "openai-compatible", "oc", "llm"))
+    GATEWAY = ("gateway", "gw", ("openai-compatible", "oc", "llm"))
     
     def __init__(self, full_name, short_name, aliases=()):
         self.full_name = full_name

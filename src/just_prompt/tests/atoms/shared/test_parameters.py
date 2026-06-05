@@ -12,9 +12,9 @@ from just_prompt.atoms.shared.parameters import (
 
 def test_parse_json_array_parameter_accepts_list_and_string():
     assert parse_json_array_parameter(["gateway:glm-4.7"], "models") == ["gateway:glm-4.7"]
-    assert parse_json_array_parameter('["gateway:glm-4.7", "td:qwen3-max"]', "models") == [
+    assert parse_json_array_parameter('["gateway:glm-4.7", "oc:qwen3-max"]', "models") == [
         "gateway:glm-4.7",
-        "td:qwen3-max",
+        "oc:qwen3-max",
     ]
 
 

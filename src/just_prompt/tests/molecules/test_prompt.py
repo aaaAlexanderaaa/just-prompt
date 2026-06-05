@@ -12,6 +12,9 @@ load_dotenv()
 
 def test_prompt_basic():
     """Test basic prompt functionality with a real API call."""
+    if not os.environ.get("OPENAI_API_KEY"):
+        pytest.skip("OpenAI API key not available")
+
     # Define a simple test case
     test_prompt = "What is the capital of France?"
     test_models = ["openai:gpt-4o-mini"]

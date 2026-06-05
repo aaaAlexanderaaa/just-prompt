@@ -13,8 +13,11 @@ from just_prompt.molecules.prompt_from_file_to_file import prompt_from_file_to_f
 load_dotenv()
 
 
-def test_directory_creation_and_file_writing():
+def test_directory_creation_and_file_writing(monkeypatch):
     """Test that the output directory is created and files are written with real API responses."""
+    if not os.environ.get("OPENAI_API_KEY"):
+        pytest.skip("OpenAI API key not available")
+
     # Create temporary input file with a simple question
     with tempfile.NamedTemporaryFile(mode='w+', delete=False) as temp_file:
         temp_file.write("What is the capital of France?")
@@ -22,6 +25,7 @@ def test_directory_creation_and_file_writing():
     
     # Create a deep non-existent directory path
     temp_dir = os.path.join(tempfile.gettempdir(), "just_prompt_test_dir", "output")
+    monkeypatch.setenv("JUST_PROMPT_FILE_ROOT", tempfile.gettempdir())
     
     try:
         # Make real API call

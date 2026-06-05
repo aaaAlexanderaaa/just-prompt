@@ -106,10 +106,6 @@ def get_api_key(provider: str) -> Optional[str]:
         return value
 
     if provider == "gateway":
-        return (
-            os.environ.get("TOKENDANCE_API_KEY")
-            or os.environ.get("OPENAI_COMPATIBLE_API_KEY")
-            or os.environ.get("OPENAI_API_KEY")
-        )
+        return os.environ.get("OPENAI_COMPATIBLE_API_KEY") or os.environ.get("OPENAI_API_KEY")
 
     return None

@@ -19,7 +19,7 @@ def test_validate_models_prefixed_by_provider():
     assert validate_models_prefixed_by_provider(["openai:gpt-4o-mini"]) == True
     assert validate_models_prefixed_by_provider(["anthropic:claude-3-5-haiku"]) == True
     assert validate_models_prefixed_by_provider(["o:gpt-4o-mini", "a:claude-3-5-haiku"]) == True
-    assert validate_models_prefixed_by_provider(["gateway:glm-4.7", "td:qwen3-max"]) == True
+    assert validate_models_prefixed_by_provider(["gateway:glm-4.7", "oc:qwen3-max"]) == True
     
     # Invalid model strings
     with pytest.raises(ValueError):
@@ -40,7 +40,7 @@ def test_validate_provider():
     assert validate_provider("o") == True
     assert validate_provider("a") == True
     assert validate_provider("gateway") == True
-    assert validate_provider("td") == True
+    assert validate_provider("oc") == True
     
     # Invalid providers
     with pytest.raises(ValueError):
@@ -59,7 +59,9 @@ def test_validate_provider_api_keys():
         "GROQ_API_KEY": "test-key",  
         # GEMINI_API_KEY not defined
         "DEEPSEEK_API_KEY": "test-key",
-        "OLLAMA_HOST": "http://localhost:11434"
+        "OLLAMA_HOST": "http://localhost:11434",
+        "MODEL_GATEWAY_API_KEY": "test-key",
+        "MODEL_GATEWAY_BASE_URL": "https://gateway.example.com/v1",
     }):
         # Call the function to validate provider API keys
         availability = validate_provider_api_keys()
@@ -74,6 +76,7 @@ def test_validate_provider_api_keys():
         assert "gemini" in availability
         assert "deepseek" in availability
         assert "ollama" in availability
+        assert availability["gateway"] is True
         
         # Make sure all providers are included in the result
         assert set(availability.keys()) == {"openai", "anthropic", "gemini", "groq", "deepseek", "ollama", "gateway"}

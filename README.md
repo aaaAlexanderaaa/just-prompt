@@ -1,6 +1,6 @@
 # Just Prompt - A lightweight MCP server for LLM providers
 
-`just-prompt` is a Model Context Protocol (MCP) server that exposes LLMs as tools. It can call a generic OpenAI-compatible model gateway, TokenDance by default, and still supports direct provider calls for OpenAI, Anthropic, Google Gemini, Groq, DeepSeek, and Ollama. See how we use the `ceo_and_board` tool to make [hard decisions easy with o3 here](https://youtu.be/LEMLntjfihA).
+`just-prompt` is a Model Context Protocol (MCP) server that exposes LLMs as tools. It can call a configured OpenAI-compatible or multi-protocol model gateway, and still supports direct provider calls for OpenAI, Anthropic, Google Gemini, Groq, DeepSeek, and Ollama. See how we use the `ceo_and_board` tool to make [hard decisions easy with o3 here](https://youtu.be/LEMLntjfihA).
 
 <img src="images/just-prompt-logo.png" alt="Just Prompt Logo" width="700" height="auto">
 
@@ -13,9 +13,9 @@ The following MCP tools are available in the server:
 
 - **`ask_model`**: Ask exactly one model through the configured gateway or a known provider prefix
   - Parameters:
-    - `model`: Model ID. Unprefixed IDs are sent to the configured OpenAI-compatible gateway.
+    - `model`: Model ID. Unprefixed IDs are sent to the configured OpenAI-compatible gateway and use model metadata to auto-select a compatible protocol.
     - `prompt`: The prompt text
-    - `options` (optional): OpenAI-compatible chat options such as `temperature`, `max_tokens`, `top_p`, `base_url`, `api_key`, and `timeout`
+    - `options` (optional): Gateway options such as `protocol` (`auto` by default), `temperature`, `max_tokens`, `top_p`, `base_url`, `api_key`, `timeout`, and `payload` overrides
 
 - **`prompt`**: Send a prompt to multiple LLM models
   - Parameters:
@@ -50,14 +50,14 @@ The following MCP tools are available in the server:
 
 - **`list_gateway_models`**: List models from the configured gateway
   - Parameters:
-    - `detailed` (optional): Return full records, including TokenDance `supported_protocols`, instead of just IDs
+    - `detailed` (optional): Return full records, including `supported_protocols`, instead of just IDs
 
 - **`call_model_protocol`**: Call a documented gateway protocol endpoint for models that are not plain chat models
   - Parameters:
     - `model`: Model ID
-    - `protocol`: Protocol ID such as `openai:chat-completions`, `anthropic:messages`, `gemini:generate-content`, `openai:image-generations`, `openai:embeddings`, `seedance:generations`, `minimax:t2a_v2`, `zai:layout-parsing`, `unifuncs:web-search`, or `unifuncs:web-reader`
+    - `protocol`: `auto` or a protocol ID such as `openai:chat-completions`, `anthropic:messages`, `gemini:generate-content`, `openai:image-generations`, `openai:embeddings`, `seedance:generations`, `minimax:t2a_v2`, `zai:layout-parsing`, `bocha:web-search`, `unifuncs:web-search`, or `unifuncs:web-reader`
     - `payload`: Protocol request body. The `model` field is added automatically when the protocol expects it in JSON.
-    - `options` (optional): `api_key`, `base_url`, `timeout`
+    - `options` (optional): `api_key`, `base_url`, `timeout`, `strict_model_protocol`
 
 - **`get_model_task`**: Poll async video-generation tasks for protocols with documented task endpoints
   - Parameters:
@@ -87,12 +87,12 @@ The following MCP tools are available in the server:
 - `l` or `ollama`: Ollama 
   - `l:llama3.1`
   - `ollama:llama3.1`
-- `gw` or `gateway`: Generic OpenAI-compatible gateway (TokenDance by default)
+- `gw` or `gateway`: Generic OpenAI-compatible or multi-protocol gateway
   - `gw:glm-4.7`
   - `gateway:qwen3-max`
-  - aliases: `td`, `tokendance`, `oc`, `openai-compatible`
+  - aliases: `oc`, `openai-compatible`, `llm`
 
-## TokenDance / OpenAI-Compatible Gateway
+## Generic Model Gateway
 
 The gateway provider is the shortest path for a Model-as-Tool setup:
 
@@ -100,22 +100,22 @@ The gateway provider is the shortest path for a Model-as-Tool setup:
 main agent -> MCP client -> ask_model(model, prompt, options?) -> your gateway -> model
 ```
 
-For TokenDance, set:
+Configure the gateway explicitly:
 
 ```bash
-MODEL_GATEWAY_BASE_URL=https://tokendance.space/gateway/v1
-MODEL_GATEWAY_PROTOCOL_BASE_URL=https://tokendance.space/gateway
-MODEL_GATEWAY_API_KEY=your_tokendance_api_key
+MODEL_GATEWAY_BASE_URL=https://your-gateway.example.com/v1
+MODEL_GATEWAY_PROTOCOL_BASE_URL=https://your-gateway.example.com
+MODEL_GATEWAY_API_KEY=your_gateway_api_key
 ```
 
-For your own OpenAI-compatible API Gateway, change only the base URL and API key:
+For a plain OpenAI-compatible API gateway, `MODEL_GATEWAY_PROTOCOL_BASE_URL` can be omitted:
 
 ```bash
 MODEL_GATEWAY_BASE_URL=https://your-gateway.example.com/v1
 MODEL_GATEWAY_API_KEY=your_gateway_api_key
 ```
 
-Use `ask_model` for text models that support `openai:chat-completions`:
+Use `ask_model` for the common "one prompt in, one result out" path. It looks at gateway model metadata and automatically selects the first compatible protocol it knows how to call:
 
 ```json
 {
@@ -125,7 +125,7 @@ Use `ask_model` for text models that support `openai:chat-completions`:
 }
 ```
 
-Use `call_model_protocol` for non-chat TokenDance models. Examples:
+Use `call_model_protocol` for non-chat gateway models. Examples:
 
 ```json
 {
@@ -143,7 +143,25 @@ Use `call_model_protocol` for non-chat TokenDance models. Examples:
 }
 ```
 
-`list_gateway_models` with `detailed=true` returns each model's `supported_protocols`, so clients can choose the right protocol instead of guessing.
+```json
+{
+  "model": "bocha-web-search",
+  "protocol": "bocha:web-search",
+  "payload": { "query": "Alibaba 2024 ESG report", "count": 10 }
+}
+```
+
+`list_gateway_models` with `detailed=true` returns each model's `supported_protocols`. The server uses this metadata for `auto` protocol selection, and clients can inspect it when they want to override the default.
+
+When you already know the protocol, pass it explicitly:
+
+```json
+{
+  "model": "gemini-2.5-pro",
+  "protocol": "gemini:generate-content",
+  "payload": { "prompt": "Explain MCP in one paragraph." }
+}
+```
 
 ## Features
 
@@ -177,9 +195,9 @@ Then edit the `.env` file to add your API keys (or export them in your shell):
 
 ```
 OPENAI_API_KEY=your_openai_api_key_here
-MODEL_GATEWAY_API_KEY=your_tokendance_or_gateway_api_key_here
-MODEL_GATEWAY_BASE_URL=https://tokendance.space/gateway/v1
-MODEL_GATEWAY_PROTOCOL_BASE_URL=https://tokendance.space/gateway
+MODEL_GATEWAY_API_KEY=your_gateway_api_key_here
+MODEL_GATEWAY_BASE_URL=https://your-gateway.example.com/v1
+MODEL_GATEWAY_PROTOCOL_BASE_URL=https://your-gateway.example.com
 ANTHROPIC_API_KEY=your_anthropic_api_key_here
 GEMINI_API_KEY=your_gemini_api_key_here
 GROQ_API_KEY=your_groq_api_key_here

@@ -135,7 +135,7 @@ class AskModelSchema(BaseModel):
     prompt: str = Field(..., description="Prompt text to send to the model")
     options: Optional[Union[Dict[str, Any], str]] = Field(
         None,
-        description="Optional OpenAI-compatible chat options such as temperature, max_tokens, top_p, stream, api_key, base_url, timeout.",
+        description="Optional gateway options. Use protocol='auto' to infer from model metadata, or pass a protocol ID plus payload/chat options such as temperature, max_tokens, top_p, api_key, base_url, timeout.",
     )
 
 class PromptFromFileSchema(BaseModel):
@@ -172,16 +172,16 @@ class ListGatewayModelsSchema(BaseModel):
 class CallModelProtocolSchema(BaseModel):
     model: str = Field(..., description="Model ID from the gateway model list")
     protocol: str = Field(
-        default="openai:chat-completions",
-        description="Protocol ID, e.g. openai:chat-completions, anthropic:messages, gemini:generate-content, openai:image-generations, seedance:generations.",
+        default="auto",
+        description="Protocol ID or 'auto'. Examples: openai:chat-completions, anthropic:messages, gemini:generate-content, openai:image-generations, seedance:generations, bocha:web-search.",
     )
     payload: Optional[Union[Dict[str, Any], str]] = Field(
         None,
-        description="Protocol request body. The model field is added automatically unless the protocol embeds it in the URL.",
+        description="Protocol request body. The model field is added automatically only for protocols that expect it.",
     )
     options: Optional[Union[Dict[str, Any], str]] = Field(
         None,
-        description="Optional gateway call options: api_key, base_url, timeout.",
+        description="Optional gateway call options: api_key, base_url, timeout, strict_model_protocol.",
     )
 
 
@@ -239,7 +239,7 @@ async def serve(default_models: str = DEFAULT_MODEL) -> None:
         return [
             Tool(
                 name=JustPromptTools.ASK_MODEL,
-                description="Ask exactly one model. Unprefixed model IDs are sent to the configured OpenAI-compatible gateway (TokenDance by default).",
+                description="Ask exactly one model. Unprefixed model IDs are sent to the configured OpenAI-compatible gateway.",
                 inputSchema=AskModelSchema.schema(),
             ),
             Tool(
@@ -274,12 +274,12 @@ async def serve(default_models: str = DEFAULT_MODEL) -> None:
             ),
             Tool(
                 name=JustPromptTools.LIST_GATEWAY_MODELS,
-                description="List models exposed by the configured OpenAI-compatible gateway, including TokenDance supported_protocols when detailed=true.",
+                description="List models exposed by the configured OpenAI-compatible gateway, including supported_protocols when detailed=true.",
                 inputSchema=ListGatewayModelsSchema.schema(),
             ),
             Tool(
                 name=JustPromptTools.CALL_MODEL_PROTOCOL,
-                description="Call a documented TokenDance/gateway protocol endpoint for chat, embeddings, images, video, speech, OCR, search, or web reader models.",
+                description="Call a documented gateway protocol endpoint for chat, embeddings, images, video, speech, OCR, search, or web reader models.",
                 inputSchema=CallModelProtocolSchema.schema(),
             ),
             Tool(
@@ -378,10 +378,19 @@ async def serve(default_models: str = DEFAULT_MODEL) -> None:
             elif name == JustPromptTools.LIST_GATEWAY_MODELS:
                 detailed = bool(arguments.get("detailed", False))
                 records = list_gateway_model_details()
+                model_ids = [
+                    str(
+                        record.get("id")
+                        or record.get("name")
+                        or record.get("model_id")
+                        or ""
+                    ).replace("models/", "", 1)
+                    for record in records
+                ]
                 text = (
                     json.dumps(records, ensure_ascii=False, indent=2)
                     if detailed
-                    else "\n".join([str(record.get("id")) for record in records if "id" in record])
+                    else "\n".join([model_id for model_id in model_ids if model_id])
                 )
                 return [TextContent(type="text", text=text)]
 
@@ -390,7 +399,7 @@ async def serve(default_models: str = DEFAULT_MODEL) -> None:
                 options = parse_json_object_parameter(arguments.get("options"), "options")
                 response = call_model_protocol(
                     arguments["model"],
-                    arguments.get("protocol", "openai:chat-completions"),
+                    arguments.get("protocol", "auto"),
                     payload=payload,
                     options=options,
                 )

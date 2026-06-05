@@ -29,7 +29,7 @@ def test_route_prompt(mock_import_module):
     assert response == "Paris is the capital of France."
 
     # Test gateway alias
-    response = ModelRouter.route_prompt("td:glm-4.7", "What is the capital of France?")
+    response = ModelRouter.route_prompt("oc:glm-4.7", "What is the capital of France?")
     assert response == "Paris is the capital of France."
     mock_import_module.assert_called_with("just_prompt.atoms.llm_providers.gateway")
     
@@ -57,7 +57,7 @@ def test_route_list_models(mock_import_module):
     assert models == ["model1", "model2"]
 
     # Test gateway alias
-    models = ModelRouter.route_list_models("td")
+    models = ModelRouter.route_list_models("oc")
     assert models == ["model1", "model2"]
     
     # Test invalid provider
@@ -77,8 +77,17 @@ def test_validate_and_correct_model_shorthand():
         # Get the provider enum
         provider = ModelProviders.from_name(provider_prefix)
         
-        # Call validate_and_correct_model
-        result = ModelRouter.magic_model_correction(provider.full_name, model, "anthropic:claude-sonnet-4-20250514")
+        mock_module = MagicMock()
+        mock_module.list_models.return_value = ["claude-3-7-sonnet-20250219"]
+        mock_module.prompt.return_value = "claude-3-7-sonnet-20250219"
+
+        with patch("importlib.import_module", return_value=mock_module):
+            # Call validate_and_correct_model
+            result = ModelRouter.magic_model_correction(
+                provider.full_name,
+                model,
+                "anthropic:claude-sonnet-4-20250514",
+            )
         
         # The magic_model_correction method should correct sonnet.3.7 to a claude model
         assert "claude" in result, f"Expected sonnet.3.7 to be corrected to a claude model, got {result}"
@@ -98,4 +107,3 @@ def test_validate_and_correct_claude4_models():
     
     result = ModelRouter.validate_and_correct_model("anthropic", "claude-opus-4-20250514")
     assert result == "claude-opus-4-20250514", f"Expected bypass for claude-4 model, got {result}"
-

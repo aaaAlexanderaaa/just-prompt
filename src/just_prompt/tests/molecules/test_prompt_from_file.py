@@ -18,12 +18,16 @@ def test_nonexistent_file():
         prompt_from_file("/non/existent/file.txt", ["o:gpt-4o-mini"])
 
 
-def test_file_read():
+def test_file_read(monkeypatch):
     """Test that the file is read correctly and processes with real API call."""
+    if not os.environ.get("OPENAI_API_KEY"):
+        pytest.skip("OpenAI API key not available")
+
     # Create temporary file with a simple question
     with tempfile.NamedTemporaryFile(mode='w+', delete=False) as temp:
         temp.write("What is the capital of France?")
         temp_path = temp.name
+    monkeypatch.setenv("JUST_PROMPT_FILE_ROOT", os.path.dirname(temp_path))
     
     try:
         # Make real API call

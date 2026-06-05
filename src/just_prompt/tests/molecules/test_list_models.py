@@ -6,9 +6,20 @@ import pytest
 import os
 from dotenv import load_dotenv
 from just_prompt.molecules.list_models import list_models
+from just_prompt.atoms.llm_providers import ollama
 
 # Load environment variables
 load_dotenv()
+
+
+def _require_ollama():
+    try:
+        models = ollama.list_models()
+    except Exception as exc:
+        pytest.skip(f"Ollama is not available: {exc}")
+    if not models:
+        pytest.skip("Ollama has no local models available")
+    return models
 
 def test_list_models_openai():
     """Test listing OpenAI models with real API call."""
@@ -92,6 +103,8 @@ def test_list_models_deepseek():
 
 def test_list_models_ollama():
     """Test listing Ollama models with real API call."""
+    _require_ollama()
+
     # Test with full provider name
     models = list_models("ollama")
     
@@ -140,6 +153,7 @@ def test_list_models_with_short_names():
         assert len(models) > 0
     
     # Ollama - short name "l"
+    _require_ollama()
     models = list_models("l")
     assert isinstance(models, list)
     assert len(models) > 0

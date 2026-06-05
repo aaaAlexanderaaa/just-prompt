@@ -31,6 +31,8 @@ class TestCEOAndBoardPrompt:
     @patch("builtins.open", new_callable=mock_open, read_data="Test prompt question")
     def test_ceo_and_board_prompt_success(self, mock_file, mock_prompt, mock_prompt_from_file_to_file, mock_environment, tmpdir):
         """Test successful CEO and board prompt execution."""
+        mock_environment.setenv("JUST_PROMPT_FILE_ROOT", str(tmpdir))
+
         # Set up mocks
         mock_prompt_from_file_to_file.return_value = [
             str(Path(tmpdir) / "test_a_claude-3.md"),
@@ -46,7 +48,8 @@ class TestCEOAndBoardPrompt:
         board_file2.write_text("GPT-4o's response to the test prompt")
         
         # Test our function
-        input_file = "test_prompt.txt"
+        input_file = str(Path(tmpdir) / "test_prompt.txt")
+        Path(input_file).touch()
         result = ceo_and_board_prompt(
             abs_from_file=input_file,
             abs_output_dir=str(tmpdir),
@@ -101,6 +104,8 @@ class TestCEOAndBoardPrompt:
     @patch("builtins.open", new_callable=mock_open, read_data="Test prompt question")
     def test_ceo_and_board_prompt_with_defaults(self, mock_file, mock_prompt, mock_prompt_from_file_to_file, mock_environment, tmpdir):
         """Test CEO and board prompt with default parameters."""
+        mock_environment.setenv("JUST_PROMPT_FILE_ROOT", str(tmpdir))
+
         # Set up mocks
         mock_prompt_from_file_to_file.return_value = [
             str(Path(tmpdir) / "test_a_claude-3.md"),
@@ -116,7 +121,8 @@ class TestCEOAndBoardPrompt:
         board_file2.write_text("GPT-4o's response to the test prompt")
         
         # Test with defaults
-        input_file = "test_prompt.txt"
+        input_file = str(Path(tmpdir) / "test_prompt.txt")
+        Path(input_file).touch()
         result = ceo_and_board_prompt(
             abs_from_file=input_file,
             abs_output_dir=str(tmpdir)

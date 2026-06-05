@@ -15,7 +15,7 @@ basic functionality (and our tests) still work.
 
 import os
 import logging
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from dotenv import load_dotenv
 
@@ -27,8 +27,17 @@ load_dotenv()
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# Initialize OpenAI client once – reused across calls.
-client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+client: Optional[OpenAI] = None
+
+
+def _get_client() -> OpenAI:
+    global client
+    if client is None:
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("Missing OPENAI_API_KEY for the OpenAI provider.")
+        client = OpenAI(api_key=api_key)
+    return client
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -79,9 +88,11 @@ def _prompt_with_reasoning(text: str, model: str, effort: str) -> str:  # pragma
     )
 
     # Prefer the official Responses endpoint when present.
-    if hasattr(client, "responses"):
+    openai_client = _get_client()
+
+    if hasattr(openai_client, "responses"):
         try:
-            response = client.responses.create(
+            response = openai_client.responses.create(
                 model=model,
                 reasoning={"effort": effort},
                 input=[{"role": "user", "content": text}],
@@ -105,7 +116,7 @@ def _prompt_with_reasoning(text: str, model: str, effort: str) -> str:  # pragma
     # accordingly.  This keeps tests functional if the Responses API is not
     # available in the runtime environment.
     try:
-        response = client.chat.completions.create(
+        response = openai_client.chat.completions.create(
             model=model,
             messages=[
                 {
@@ -137,7 +148,7 @@ def prompt(text: str, model: str) -> str:
     # Regular chat completion path
     try:
         logger.info("Sending prompt to OpenAI model: %s", base_model)
-        response = client.chat.completions.create(
+        response = _get_client().chat.completions.create(
             model=base_model,
             messages=[{"role": "user", "content": text}],
         )
@@ -157,7 +168,7 @@ def list_models() -> List[str]:
     """
     try:
         logger.info("Listing OpenAI models")
-        response = client.models.list()
+        response = _get_client().models.list()
 
         # Return all models without filtering
         models = [model.id for model in response.data]

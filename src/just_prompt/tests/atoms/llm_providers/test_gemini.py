@@ -6,7 +6,6 @@ import pytest
 import os
 import re
 from dotenv import load_dotenv
-from just_prompt.atoms.llm_providers import gemini
 
 # Load environment variables
 load_dotenv()
@@ -14,6 +13,9 @@ load_dotenv()
 # Skip tests if API key not available
 if not os.environ.get("GEMINI_API_KEY"):
     pytest.skip("Gemini API key not available", allow_module_level=True)
+
+
+from just_prompt.atoms.llm_providers import gemini
 
 
 def test_list_models():

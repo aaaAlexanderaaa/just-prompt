@@ -2,7 +2,6 @@
 Single-model Model-as-Tool helper.
 """
 
-import json
 from typing import Any, Dict, Optional
 
 from ..atoms.llm_providers import gateway
@@ -29,26 +28,10 @@ def ask_model(model: str, prompt: str, options: Optional[Dict[str, Any]] = None)
         provider, model_name = split_provider_and_model(model)
         provider_enum = ModelProviders.from_name(provider)
         if provider_enum and provider_enum.full_name == "gateway":
-            response = gateway.chat_completion(
-                model_name,
-                [{"role": "user", "content": prompt}],
-                options=options,
-            )
-            try:
-                return response["choices"][0]["message"]["content"] or ""
-            except (KeyError, IndexError, TypeError):
-                return json.dumps(response, ensure_ascii=False)
+            return gateway.prompt(prompt, model_name, options=options)
         return ModelRouter.route_prompt(model, prompt)
 
-    response = gateway.chat_completion(
-        model,
-        [{"role": "user", "content": prompt}],
-        options=options,
-    )
-    try:
-        return response["choices"][0]["message"]["content"] or ""
-    except (KeyError, IndexError, TypeError):
-        return json.dumps(response, ensure_ascii=False)
+    return gateway.prompt(prompt, model, options=options)
 
 
 def call_model_protocol(

@@ -47,7 +47,7 @@ def main():
     )
     parser.add_argument(
         "--gateway-base-url",
-        help="OpenAI-compatible gateway base URL, e.g. https://tokendance.space/gateway/v1",
+        help="OpenAI-compatible gateway base URL, e.g. https://gateway.example.com/v1",
     )
     parser.add_argument(
         "--gateway-api-key",

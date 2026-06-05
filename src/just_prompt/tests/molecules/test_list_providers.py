@@ -53,4 +53,5 @@ def test_list_providers():
         elif provider["name"] == "GATEWAY":
             assert provider["full_name"] == "gateway"
             assert provider["short_name"] == "gw"
-            assert "tokendance" in provider["aliases"]
+            assert "openai-compatible" in provider["aliases"]
+            assert "oc" in provider["aliases"]

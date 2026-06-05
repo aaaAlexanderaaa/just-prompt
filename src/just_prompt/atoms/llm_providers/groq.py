@@ -3,7 +3,7 @@ Groq provider implementation.
 """
 
 import os
-from typing import List
+from typing import List, Optional
 import logging
 from groq import Groq
 from dotenv import load_dotenv
@@ -14,8 +14,17 @@ load_dotenv()
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# Initialize Groq client
-client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+client: Optional[Groq] = None
+
+
+def _get_client() -> Groq:
+    global client
+    if client is None:
+        api_key = os.environ.get("GROQ_API_KEY")
+        if not api_key:
+            raise ValueError("Missing GROQ_API_KEY for the Groq provider.")
+        client = Groq(api_key=api_key)
+    return client
 
 
 def prompt(text: str, model: str) -> str:
@@ -33,7 +42,7 @@ def prompt(text: str, model: str) -> str:
         logger.info(f"Sending prompt to Groq model: {model}")
         
         # Create chat completion
-        chat_completion = client.chat.completions.create(
+        chat_completion = _get_client().chat.completions.create(
             messages=[{"role": "user", "content": text}],
             model=model,
         )
@@ -54,7 +63,7 @@ def list_models() -> List[str]:
     """
     try:
         logger.info("Listing Groq models")
-        response = client.models.list()
+        response = _get_client().models.list()
         
         # Extract model IDs
         models = [model.id for model in response.data]

@@ -3,7 +3,7 @@ DeepSeek provider implementation.
 """
 
 import os
-from typing import List
+from typing import List, Optional
 import logging
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -14,11 +14,17 @@ load_dotenv()
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# Initialize DeepSeek client with OpenAI-compatible interface
-client = OpenAI(
-    api_key=os.environ.get("DEEPSEEK_API_KEY"),
-    base_url="https://api.deepseek.com"
-)
+client: Optional[OpenAI] = None
+
+
+def _get_client() -> OpenAI:
+    global client
+    if client is None:
+        api_key = os.environ.get("DEEPSEEK_API_KEY")
+        if not api_key:
+            raise ValueError("Missing DEEPSEEK_API_KEY for the DeepSeek provider.")
+        client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+    return client
 
 
 def prompt(text: str, model: str) -> str:
@@ -36,7 +42,7 @@ def prompt(text: str, model: str) -> str:
         logger.info(f"Sending prompt to DeepSeek model: {model}")
         
         # Create chat completion
-        response = client.chat.completions.create(
+        response = _get_client().chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": text}],
             stream=False,
@@ -58,7 +64,7 @@ def list_models() -> List[str]:
     """
     try:
         logger.info("Listing DeepSeek models")
-        response = client.models.list()
+        response = _get_client().models.list()
         
         # Extract model IDs
         models = [model.id for model in response.data]

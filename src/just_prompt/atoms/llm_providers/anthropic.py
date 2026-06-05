@@ -5,7 +5,7 @@ Anthropic provider implementation.
 import os
 import re
 import anthropic
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 import logging
 from dotenv import load_dotenv
 
@@ -15,8 +15,17 @@ load_dotenv()
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# Initialize Anthropic client
-client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+client: Optional[anthropic.Anthropic] = None
+
+
+def _get_client() -> anthropic.Anthropic:
+    global client
+    if client is None:
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise ValueError("Missing ANTHROPIC_API_KEY for the Anthropic provider.")
+        client = anthropic.Anthropic(api_key=api_key)
+    return client
 
 
 def parse_thinking_suffix(model: str) -> Tuple[str, int]:
@@ -98,7 +107,7 @@ def prompt_with_thinking(text: str, model: str, thinking_budget: int) -> str:
         max_tokens = thinking_budget + 1000  # Adding 1000 tokens for the response
         
         logger.info(f"Sending prompt to Anthropic model {model} with thinking budget {thinking_budget}")
-        message = client.messages.create(
+        message = _get_client().messages.create(
             model=model,
             max_tokens=max_tokens,
             thinking={
@@ -144,7 +153,7 @@ def prompt(text: str, model: str) -> str:
     # Otherwise, use regular prompt
     try:
         logger.info(f"Sending prompt to Anthropic model: {base_model}")
-        message = client.messages.create(
+        message = _get_client().messages.create(
             model=base_model, max_tokens=4096, messages=[{"role": "user", "content": text}]
         )
 
@@ -170,7 +179,7 @@ def list_models() -> List[str]:
     """
     try:
         logger.info("Listing Anthropic models")
-        response = client.models.list()
+        response = _get_client().models.list()
 
         models = [model.id for model in response.data]
         return models
