@@ -17,6 +17,40 @@ The following MCP tools are available in the server:
     - `prompt`: The prompt text
     - `options` (optional): Gateway options such as `protocol` (`auto` by default), `temperature`, `max_tokens`, `top_p`, `base_url`, `api_key`, `timeout`, and `payload` overrides
 
+- **`mimo_v2_5_tts`**: Generate speech with `mimo-v2.5-tts`
+  - Parameters:
+    - `text` (required): Text to synthesize
+    - `voice_id` (default: `male-qn-qingse`, used by speech protocols that accept one)
+    - `output_path` (optional): Audio output path. Defaults to `generated/mimo-v2.5-tts-<utc>.mp3`
+    - `payload` / `options` (optional): Raw payload overrides and gateway options. Uses assistant-role chat audio by default; pass `options.protocol` as `openai:audio-speech` or `minimax:t2a_v2` when your gateway supports those routes.
+  - Output: JSON with `saved_audio_path` and `saved_audio_bytes`; URL audio responses are downloaded before the tool returns.
+
+- **`minimax_speech_2_8_turbo`**: Generate speech with `minimax-speech-2.8-turbo`
+  - Parameters are the same as `mimo_v2_5_tts`
+  - Limitation: the integration test gateway returned `no_endpoints_available` for this model on 2026-06-06, so the tool is registered but may not be callable until the gateway exposes a live endpoint.
+
+- **`minimax_m3_free`**: Ask `minimax-m3:free` through non-streaming OpenAI chat completions
+  - Parameters:
+    - `prompt` (required)
+    - `system_prompt`, `temperature`, `max_tokens`, `top_p` (optional)
+    - `payload` / `options` (optional)
+  - Output: plain text from the model.
+
+- **`gpt_image_2`**: Generate images with `gpt-image-2`
+  - Parameters:
+    - `prompt` (required)
+    - `output_path` (optional): Image output path. Defaults to `generated/gpt-image-2-<utc>.png`
+    - `size` (default: `auto`), `quality` (default: `auto`), `n` (default: `1`), `background`, `moderation`, `output_format` (default: `png`), `output_compression`
+    - `payload` / `options` (optional)
+  - Output: JSON with `saved_image_paths` and `saved_image_bytes`; URL image responses are downloaded before the tool returns.
+
+- **`grok_4_20_multi_agent_xhigh`**: Ask the long-running, non-streaming search model `grok-4.20-multi-agent-xhigh`
+  - Parameters:
+    - `query` (required)
+    - `system_prompt`, `temperature`, `max_tokens`, `top_p`, `search_parameters` (optional)
+    - `payload` / `options` (optional)
+  - Output: plain text from the model. Default timeout is longer than normal chat calls.
+
 - **`prompt`**: Send a prompt to multiple LLM models
   - Parameters:
     - `text`: The prompt text
@@ -55,7 +89,7 @@ The following MCP tools are available in the server:
 - **`call_model_protocol`**: Call a documented gateway protocol endpoint for models that are not plain chat models
   - Parameters:
     - `model`: Model ID
-    - `protocol`: `auto` or a protocol ID such as `openai:chat-completions`, `anthropic:messages`, `gemini:generate-content`, `openai:image-generations`, `openai:embeddings`, `seedance:generations`, `minimax:t2a_v2`, `zai:layout-parsing`, `bocha:web-search`, `unifuncs:web-search`, or `unifuncs:web-reader`
+    - `protocol`: `auto` or a protocol ID such as `openai:chat-completions`, `anthropic:messages`, `gemini:generate-content`, `openai:image-generations`, `openai:audio-speech`, `openai:embeddings`, `seedance:generations`, `minimax:t2a_v2`, `zai:layout-parsing`, `bocha:web-search`, `unifuncs:web-search`, or `unifuncs:web-reader`
     - `payload`: Protocol request body. The `model` field is added automatically when the protocol expects it in JSON.
     - `options` (optional): `api_key`, `base_url`, `timeout`, `strict_model_protocol`
 
@@ -121,7 +155,7 @@ Use `ask_model` for the common "one prompt in, one result out" path. It looks at
 {
   "model": "glm-4.7",
   "prompt": "Summarize the tradeoffs of MCP model-as-tool wrappers.",
-  "options": { "temperature": 0.2, "max_tokens": 1024 }
+  "options": { "temperature": 0.2 }
 }
 ```
 
@@ -132,6 +166,196 @@ Use `call_model_protocol` for non-chat gateway models. Examples:
   "model": "qwen-text-embedding-v4",
   "protocol": "openai:embeddings",
   "payload": { "input": "semantic search query" }
+}
+```
+
+For the fixed models added above, prefer the dedicated MCP tools. They set the
+right model IDs, force non-streaming calls where needed, use longer timeouts for
+slow image/search requests, and save base64, hex, binary, or URL media responses
+to local files.
+
+## Dedicated Gateway Model Tools
+
+These tools use `MODEL_GATEWAY_BASE_URL` and `MODEL_GATEWAY_API_KEY`. Set them
+in `.env`, export them in your shell, or pass them through your MCP client's
+environment configuration.
+
+Media outputs are written inside the configured file root. By default that is
+the MCP server's current working directory; set `JUST_PROMPT_FILE_ROOT` if you
+want generated files under a different allowed directory. If `output_path` is
+omitted, files are saved under `generated/`.
+
+### `mimo_v2_5_tts`
+
+Generates speech with `mimo-v2.5-tts`.
+
+Required:
+
+- `text`: text to synthesize.
+
+Defaults:
+
+- `output_path`: `generated/mimo-v2.5-tts-<utc>.mp3`
+- `audio_format`: `mp3`
+- `options.protocol`: `auto`, resolved by this tool to `openai:chat-completions`
+- gateway timeout: `300` seconds
+- media URL download timeout: `120` seconds
+
+Accepted parameters:
+
+- `voice_id`, `speed`, `volume`, `pitch`, `sample_rate`, `bitrate`, `audio_format`, `channel`, `language_boost`, `emotion`, `subtitle_enable`
+- `payload`: raw request body overrides
+- `options`: `protocol`, `api_key`, `base_url`, `timeout`, `media_download_timeout`
+
+Protocol notes:
+
+- The current working route for `mimo-v2.5-tts` is assistant-role OpenAI chat audio.
+- `voice_id` and detailed voice/audio settings are only meaningful when the gateway supports `openai:audio-speech` or `minimax:t2a_v2`; the default chat-audio route may ignore them.
+- The tool finishes only after it saves an audio file. It handles raw bytes, hex, base64, data URLs, and HTTP(S) media URLs.
+
+Minimal call:
+
+```json
+{
+  "text": "请用自然旁白语气朗读这段家庭档案说明。"
+}
+```
+
+Typical result:
+
+```json
+{
+  "saved_audio_path": "/path/to/just-prompt/generated/mimo-v2.5-tts-20260606T011609Z.mp3",
+  "saved_audio_bytes": 299564
+}
+```
+
+### `minimax_speech_2_8_turbo`
+
+Registered as a speech tool for `minimax-speech-2.8-turbo` with the same
+parameters and output contract as `mimo_v2_5_tts`.
+
+Known limitation:
+
+- On 2026-06-06, the configured OneAPI gateway returned `no_endpoints_available` for this model through the checked routes. That means the MCP tool is present, but the gateway currently has no usable backend endpoint for it.
+
+### `minimax_m3_free`
+
+Calls `minimax-m3:free` through non-streaming OpenAI chat completions.
+
+Required:
+
+- `prompt`: user prompt.
+
+Optional parameters:
+
+- `system_prompt`: system instruction.
+- `temperature`, `top_p`: sampling controls.
+- `max_tokens`: hard output-length cap. Use it only when you specifically want truncation; omit it for normal full-answer behavior.
+- `payload`: raw chat-completions overrides.
+- `options`: `api_key`, `base_url`, `timeout`.
+
+Minimal call:
+
+```json
+{
+  "prompt": "给我三条家庭知识库整理建议。"
+}
+```
+
+### `gpt_image_2`
+
+Generates an image with `gpt-image-2` through OpenAI image generations.
+
+Required:
+
+- `prompt`: image prompt.
+
+Defaults:
+
+- `size`: `auto`
+- `quality`: `auto`
+- `n`: `1`
+- `output_format`: `png`
+- `output_path`: `generated/gpt-image-2-<utc>.png`
+- gateway timeout: `900` seconds
+- media URL download timeout: `120` seconds
+
+Accepted parameters:
+
+- `size`: `auto`, `1024x1024`, `1024x1536`, `1536x1024`, or another value accepted by the gateway/model.
+- `quality`: `auto` or another explicit quality value accepted by the gateway/model. Leave it at `auto` for normal use.
+- `n`: number of images. Default is `1`.
+- `background`, `moderation`, `output_format`, `output_compression`
+- `payload`: raw image-generation overrides.
+- `options`: `api_key`, `base_url`, `timeout`, `media_download_timeout`.
+
+Output contract:
+
+- The tool finishes only after it saves local image files.
+- It handles base64/data responses and HTTP(S) image URLs.
+- Returned JSON includes `saved_image_paths` and `saved_image_bytes`; when the gateway returned a URL, it is retained as `source_image_urls` for traceability.
+
+Prompt-only auto call:
+
+```json
+{
+  "prompt": "A clean editorial illustration of a compact home lab desk, warm morning light, no text."
+}
+```
+
+Explicit-size call:
+
+```json
+{
+  "prompt": "A crisp square illustration of a compact home lab desk, warm morning light, no text.",
+  "n": 1,
+  "size": "1024x1024",
+  "quality": "auto"
+}
+```
+
+On this gateway, examples keep `quality` at `auto`; override it only when the
+task itself requires a specific quality setting.
+
+Typical result:
+
+```json
+{
+  "saved_image_paths": ["/path/to/just-prompt/generated/gpt-image-2-20260606T012000Z.png"],
+  "saved_image_bytes": [1048576],
+  "source_image_urls": ["https://example-cdn.invalid/generated-image.png"]
+}
+```
+
+### `grok_4_20_multi_agent_xhigh`
+
+Calls the long-running, non-streaming search model
+`grok-4.20-multi-agent-xhigh` through OpenAI chat completions.
+
+Required:
+
+- `query`: research/search question.
+
+Optional parameters:
+
+- `system_prompt`: system instruction.
+- `temperature`, `top_p`: sampling controls.
+- `max_tokens`: hard output-length cap. Use it only when you specifically want truncation; omit it for normal full-answer behavior.
+- `search_parameters`: provider-specific search options.
+- `payload`: raw chat-completions overrides.
+- `options`: `api_key`, `base_url`, `timeout`.
+
+Defaults:
+
+- `stream`: `false`
+- gateway timeout: `1200` seconds
+
+Example:
+
+```json
+{
+  "query": "Find recent privacy-minded local AI tooling for home lab operators. Give three concise bullets with dates."
 }
 ```
 

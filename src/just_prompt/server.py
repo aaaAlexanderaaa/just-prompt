@@ -26,6 +26,13 @@ from .molecules.ask_model import (
     get_model_task,
     list_gateway_model_details,
 )
+from .molecules.gateway_model_tools import (
+    ask_grok_4_20_multi_agent_xhigh,
+    ask_minimax_m3_free,
+    generate_gpt_image_2,
+    generate_mimo_v2_5_tts,
+    generate_minimax_speech_2_8_turbo,
+)
 from .atoms.shared.parameters import (
     parse_json_array_parameter,
     parse_json_object_parameter,
@@ -53,12 +60,14 @@ SENSITIVE_ARGUMENT_KEYS = {
     "password",
     "payload",
     "prompt",
+    "query",
     "secret",
+    "system_prompt",
     "text",
     "token",
 }
 
-PATH_ARGUMENT_KEYS = {"abs_file_path", "abs_output_dir", "file_path", "output_dir"}
+PATH_ARGUMENT_KEYS = {"abs_file_path", "abs_output_dir", "file_path", "output_dir", "output_path"}
 
 
 def _summarize_for_log(value: Any) -> Any:
@@ -104,9 +113,24 @@ def _redacted_tool_arguments(arguments: Dict[str, Any]) -> Dict[str, Any]:
     return redacted
 
 
+def _bool_argument(value: Any, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() not in {"", "0", "false", "no", "off"}
+    return bool(value)
+
+
 # Tool names enum
 class JustPromptTools:
     ASK_MODEL = "ask_model"
+    MIMO_V2_5_TTS = "mimo_v2_5_tts"
+    MINIMAX_SPEECH_2_8_TURBO = "minimax_speech_2_8_turbo"
+    MINIMAX_M3_FREE = "minimax_m3_free"
+    GPT_IMAGE_2 = "gpt_image_2"
+    GROK_4_20_MULTI_AGENT_XHIGH = "grok_4_20_multi_agent_xhigh"
     PROMPT = "prompt"
     PROMPT_FROM_FILE = "prompt_from_file"
     PROMPT_FROM_FILE_TO_FILE = "prompt_from_file_to_file"
@@ -137,6 +161,60 @@ class AskModelSchema(BaseModel):
         None,
         description="Optional gateway options. Use protocol='auto' to infer from model metadata, or pass a protocol ID plus payload/chat options such as temperature, max_tokens, top_p, api_key, base_url, timeout.",
     )
+
+
+class GatewaySpeechSchema(BaseModel):
+    text: str = Field(..., description="Text to synthesize into speech")
+    voice_id: str = Field("male-qn-qingse", description="Voice ID for speech protocols that accept one")
+    output_path: Optional[str] = Field(None, description="Optional path for the generated audio file. Defaults to generated/<model>-<utc>.mp3 under the configured file root.")
+    speed: float = Field(1.0, description="Voice speed")
+    volume: float = Field(1.0, description="Voice volume; sent as MiniMax voice_setting.vol")
+    pitch: int = Field(0, description="Voice pitch")
+    sample_rate: int = Field(32000, description="Audio sample rate")
+    bitrate: int = Field(128000, description="Audio bitrate")
+    audio_format: str = Field("mp3", description="Audio format such as mp3, wav, pcm, or opus")
+    channel: int = Field(1, description="Audio channel count")
+    language_boost: Optional[str] = Field(None, description="Optional MiniMax language_boost value")
+    emotion: Optional[str] = Field(None, description="Optional MiniMax voice emotion")
+    subtitle_enable: bool = Field(False, description="Whether to request subtitle data")
+    payload: Optional[Union[Dict[str, Any], str]] = Field(None, description="Optional raw payload overrides")
+    options: Optional[Union[Dict[str, Any], str]] = Field(None, description="Optional gateway call options: protocol, api_key, base_url, timeout, media_download_timeout")
+
+
+class GatewayChatSchema(BaseModel):
+    prompt: str = Field(..., description="Prompt text")
+    system_prompt: Optional[str] = Field(None, description="Optional system prompt")
+    temperature: Optional[float] = Field(None, description="Sampling temperature")
+    max_tokens: Optional[int] = Field(None, description="Maximum output tokens")
+    top_p: Optional[float] = Field(None, description="Nucleus sampling value")
+    payload: Optional[Union[Dict[str, Any], str]] = Field(None, description="Optional raw chat-completions payload overrides")
+    options: Optional[Union[Dict[str, Any], str]] = Field(None, description="Optional gateway call options: api_key, base_url, timeout")
+
+
+class GptImage2Schema(BaseModel):
+    prompt: str = Field(..., description="Image prompt")
+    output_path: Optional[str] = Field(None, description="Optional path for the generated image file. Defaults to generated/gpt-image-2-<utc>.png under the configured file root.")
+    size: str = Field("auto", description="Image size. Use auto for provider default, or explicit values such as 1024x1024, 1024x1536, or 1536x1024.")
+    quality: str = Field("auto", description="Image quality. Use auto for normal use, or pass a provider-supported explicit value when you intentionally want to override it.")
+    n: int = Field(1, description="Number of images to generate")
+    background: Optional[str] = Field(None, description="Optional background setting")
+    moderation: Optional[str] = Field(None, description="Optional moderation setting")
+    output_format: str = Field("png", description="Output format such as png, jpeg, or webp")
+    output_compression: Optional[int] = Field(None, description="Optional compression level for supported formats")
+    payload: Optional[Union[Dict[str, Any], str]] = Field(None, description="Optional raw image generation payload overrides")
+    options: Optional[Union[Dict[str, Any], str]] = Field(None, description="Optional gateway call options: api_key, base_url, timeout, media_download_timeout")
+
+
+class GrokSearchSchema(BaseModel):
+    query: str = Field(..., description="Search/research query")
+    system_prompt: Optional[str] = Field(None, description="Optional system prompt")
+    temperature: Optional[float] = Field(None, description="Sampling temperature")
+    max_tokens: Optional[int] = Field(None, description="Maximum output tokens")
+    top_p: Optional[float] = Field(None, description="Nucleus sampling value")
+    search_parameters: Optional[Union[Dict[str, Any], str]] = Field(None, description="Optional provider-specific search parameters")
+    payload: Optional[Union[Dict[str, Any], str]] = Field(None, description="Optional raw chat-completions payload overrides")
+    options: Optional[Union[Dict[str, Any], str]] = Field(None, description="Optional gateway call options: api_key, base_url, timeout")
+
 
 class PromptFromFileSchema(BaseModel):
     abs_file_path: str = Field(..., description="Absolute path to the file containing the prompt (must be an absolute path, not relative)")
@@ -243,6 +321,31 @@ async def serve(default_models: str = DEFAULT_MODEL) -> None:
                 inputSchema=AskModelSchema.schema(),
             ),
             Tool(
+                name=JustPromptTools.MIMO_V2_5_TTS,
+                description="Generate speech with the gateway model mimo-v2.5-tts. Uses assistant-role chat audio by default and saves returned audio bytes, base64, hex, or URL media to a local file.",
+                inputSchema=GatewaySpeechSchema.schema(),
+            ),
+            Tool(
+                name=JustPromptTools.MINIMAX_SPEECH_2_8_TURBO,
+                description="Generate speech with the gateway model minimax-speech-2.8-turbo. Uses assistant-role chat audio by default and saves returned audio bytes, base64, hex, or URL media to a local file when the gateway has a live endpoint.",
+                inputSchema=GatewaySpeechSchema.schema(),
+            ),
+            Tool(
+                name=JustPromptTools.MINIMAX_M3_FREE,
+                description="Ask the gateway chat model minimax-m3:free through non-streaming OpenAI chat completions.",
+                inputSchema=GatewayChatSchema.schema(),
+            ),
+            Tool(
+                name=JustPromptTools.GPT_IMAGE_2,
+                description="Generate an image with the gateway model gpt-image-2 through OpenAI image generations. Saves returned base64 image data or downloaded image URLs to a local file.",
+                inputSchema=GptImage2Schema.schema(),
+            ),
+            Tool(
+                name=JustPromptTools.GROK_4_20_MULTI_AGENT_XHIGH,
+                description="Ask the long-running non-streaming search model grok-4.20-multi-agent-xhigh through OpenAI chat completions.",
+                inputSchema=GrokSearchSchema.schema(),
+            ),
+            Tool(
                 name=JustPromptTools.PROMPT,
                 description="Send a prompt to multiple LLM models",
                 inputSchema=PromptSchema.schema(),
@@ -298,6 +401,101 @@ async def serve(default_models: str = DEFAULT_MODEL) -> None:
             if name == JustPromptTools.ASK_MODEL:
                 options = parse_json_object_parameter(arguments.get("options"), "options")
                 response = ask_model(arguments["model"], arguments["prompt"], options)
+                return [TextContent(type="text", text=response)]
+
+            elif name == JustPromptTools.MIMO_V2_5_TTS:
+                payload = parse_json_object_parameter(arguments.get("payload"), "payload")
+                options = parse_json_object_parameter(arguments.get("options"), "options")
+                response = generate_mimo_v2_5_tts(
+                    text=arguments["text"],
+                    voice_id=arguments.get("voice_id", "male-qn-qingse"),
+                    output_path=arguments.get("output_path"),
+                    speed=float(arguments.get("speed", 1.0)),
+                    volume=float(arguments.get("volume", 1.0)),
+                    pitch=int(arguments.get("pitch", 0)),
+                    sample_rate=int(arguments.get("sample_rate", 32000)),
+                    bitrate=int(arguments.get("bitrate", 128000)),
+                    audio_format=arguments.get("audio_format", "mp3"),
+                    channel=int(arguments.get("channel", 1)),
+                    language_boost=arguments.get("language_boost"),
+                    emotion=arguments.get("emotion"),
+                    subtitle_enable=_bool_argument(arguments.get("subtitle_enable"), False),
+                    payload=payload,
+                    options=options,
+                )
+                return [TextContent(type="text", text=response)]
+
+            elif name == JustPromptTools.MINIMAX_SPEECH_2_8_TURBO:
+                payload = parse_json_object_parameter(arguments.get("payload"), "payload")
+                options = parse_json_object_parameter(arguments.get("options"), "options")
+                response = generate_minimax_speech_2_8_turbo(
+                    text=arguments["text"],
+                    voice_id=arguments.get("voice_id", "male-qn-qingse"),
+                    output_path=arguments.get("output_path"),
+                    speed=float(arguments.get("speed", 1.0)),
+                    volume=float(arguments.get("volume", 1.0)),
+                    pitch=int(arguments.get("pitch", 0)),
+                    sample_rate=int(arguments.get("sample_rate", 32000)),
+                    bitrate=int(arguments.get("bitrate", 128000)),
+                    audio_format=arguments.get("audio_format", "mp3"),
+                    channel=int(arguments.get("channel", 1)),
+                    language_boost=arguments.get("language_boost"),
+                    emotion=arguments.get("emotion"),
+                    subtitle_enable=_bool_argument(arguments.get("subtitle_enable"), False),
+                    payload=payload,
+                    options=options,
+                )
+                return [TextContent(type="text", text=response)]
+
+            elif name == JustPromptTools.MINIMAX_M3_FREE:
+                payload = parse_json_object_parameter(arguments.get("payload"), "payload")
+                options = parse_json_object_parameter(arguments.get("options"), "options")
+                response = ask_minimax_m3_free(
+                    prompt=arguments["prompt"],
+                    system_prompt=arguments.get("system_prompt"),
+                    temperature=arguments.get("temperature"),
+                    max_tokens=arguments.get("max_tokens"),
+                    top_p=arguments.get("top_p"),
+                    payload=payload,
+                    options=options,
+                )
+                return [TextContent(type="text", text=response)]
+
+            elif name == JustPromptTools.GPT_IMAGE_2:
+                payload = parse_json_object_parameter(arguments.get("payload"), "payload")
+                options = parse_json_object_parameter(arguments.get("options"), "options")
+                response = generate_gpt_image_2(
+                    prompt=arguments["prompt"],
+                    output_path=arguments.get("output_path"),
+                    size=arguments.get("size", "auto"),
+                    quality=arguments.get("quality", "auto"),
+                    n=int(arguments.get("n", 1)),
+                    background=arguments.get("background"),
+                    moderation=arguments.get("moderation"),
+                    output_format=arguments.get("output_format", "png"),
+                    output_compression=arguments.get("output_compression"),
+                    payload=payload,
+                    options=options,
+                )
+                return [TextContent(type="text", text=response)]
+
+            elif name == JustPromptTools.GROK_4_20_MULTI_AGENT_XHIGH:
+                search_parameters = parse_json_object_parameter(
+                    arguments.get("search_parameters"),
+                    "search_parameters",
+                )
+                payload = parse_json_object_parameter(arguments.get("payload"), "payload")
+                options = parse_json_object_parameter(arguments.get("options"), "options")
+                response = ask_grok_4_20_multi_agent_xhigh(
+                    query=arguments["query"],
+                    system_prompt=arguments.get("system_prompt"),
+                    temperature=arguments.get("temperature"),
+                    max_tokens=arguments.get("max_tokens"),
+                    top_p=arguments.get("top_p"),
+                    search_parameters=search_parameters,
+                    payload=payload,
+                    options=options,
+                )
                 return [TextContent(type="text", text=response)]
 
             elif name == JustPromptTools.PROMPT:

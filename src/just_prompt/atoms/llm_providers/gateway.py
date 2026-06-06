@@ -38,6 +38,7 @@ PROTOCOL_BASE_URL_ENV_NAMES = (
 PROTOCOL_ENDPOINTS: Dict[str, Tuple[str, str, Dict[str, str]]] = {
     "openai:chat-completions": ("POST", "/v1/chat/completions", {}),
     "openai:image-generations": ("POST", "/v1/images/generations", {}),
+    "openai:audio-speech": ("POST", "/v1/audio/speech", {}),
     "openai:embeddings": ("POST", "/v1/embeddings", {}),
     "anthropic:messages": ("POST", "/v1/messages", {"anthropic-version": "2023-06-01"}),
     "gemini:generate-content": ("POST", "/v1beta/models/{model}:generateContent", {}),
@@ -62,6 +63,7 @@ PROTOCOL_ENDPOINTS: Dict[str, Tuple[str, str, Dict[str, str]]] = {
 PROTOCOL_MODEL_LOCATIONS: Dict[str, str] = {
     "openai:chat-completions": "body",
     "openai:image-generations": "body",
+    "openai:audio-speech": "body",
     "openai:embeddings": "body",
     "anthropic:messages": "body",
     "gemini:generate-content": "path",
@@ -84,6 +86,7 @@ DEFAULT_PROTOCOL_PRIORITY = (
     "anthropic:messages",
     "gemini:generate-content",
     "openai:image-generations",
+    "openai:audio-speech",
     "openai:embeddings",
     "ark:image-generations",
     "seedance:generations",
@@ -167,6 +170,48 @@ def _normalize_protocol_records(raw_protocols: Any) -> List[str]:
     return protocols
 
 
+def _normalize_endpoint_type_records(raw_endpoint_types: Any) -> List[str]:
+    if raw_endpoint_types is None:
+        return []
+    if isinstance(raw_endpoint_types, str):
+        return [raw_endpoint_types.strip().lower()]
+    if isinstance(raw_endpoint_types, dict):
+        endpoint_types = []
+        for key, value in raw_endpoint_types.items():
+            if value not in (False, None):
+                endpoint_types.append(str(key).strip().lower())
+        return endpoint_types
+    if not isinstance(raw_endpoint_types, Iterable):
+        return []
+    return [str(item).strip().lower() for item in raw_endpoint_types if str(item).strip()]
+
+
+def _inferred_protocols_from_record(model_record: Dict[str, Any]) -> List[str]:
+    model_id = (_model_id(model_record) or "").lower()
+    endpoint_types = _normalize_endpoint_type_records(
+        model_record.get("supported_endpoint_types")
+        or model_record.get("supportedEndpointTypes")
+        or model_record.get("endpoint_types")
+        or model_record.get("endpointTypes")
+    )
+
+    if model_id in {"mimo-v2.5-tts", "minimax-speech-2.8-turbo"}:
+        return ["openai:chat-completions", "openai:audio-speech", "minimax:t2a_v2"]
+    if model_id == "minimax-m3:free":
+        return ["openai:chat-completions"]
+    if model_id == "gpt-image-2" or model_id.startswith("gpt-image-"):
+        return ["openai:image-generations"]
+    if model_id == "grok-4.20-multi-agent-xhigh":
+        return ["openai:chat-completions"]
+
+    if "openai" in endpoint_types:
+        if "image" in model_id:
+            return ["openai:image-generations"]
+        return ["openai:chat-completions"]
+
+    return []
+
+
 def supported_protocols_from_record(model_record: Dict[str, Any]) -> List[str]:
     """
     Extract supported protocol IDs from a gateway model record.
@@ -176,7 +221,10 @@ def supported_protocols_from_record(model_record: Dict[str, Any]) -> List[str]:
         or model_record.get("supportedProtocols")
         or model_record.get("protocols")
     )
-    return _normalize_protocol_records(raw_protocols)
+    protocols = _normalize_protocol_records(raw_protocols)
+    if protocols:
+        return protocols
+    return _inferred_protocols_from_record(model_record)
 
 
 def find_model_record(
@@ -474,7 +522,10 @@ def _join_url(base_url: str, path: str) -> str:
 
 
 def _decode_response(raw: bytes) -> Any:
-    text = raw.decode("utf-8")
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return raw
     try:
         return json.loads(text)
     except json.JSONDecodeError:

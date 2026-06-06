@@ -46,6 +46,14 @@ def test_gateway_supports_tokendance_documented_protocols():
     assert TOKENDANCE_DOCUMENTED_PROTOCOLS <= set(gateway.PROTOCOL_ENDPOINTS)
 
 
+def test_gateway_supports_openai_audio_speech_protocol():
+    assert gateway.PROTOCOL_ENDPOINTS["openai:audio-speech"] == (
+        "POST",
+        "/v1/audio/speech",
+        {},
+    )
+
+
 def test_unsupported_model_protocols_allows_tokendance_documented_protocols():
     records = [
         {"id": protocol.replace(":", "-"), "supported_protocols": [protocol]}
@@ -101,6 +109,38 @@ def test_supported_protocols_from_record_accepts_common_metadata_shapes(
     assert gateway.supported_protocols_from_record(
         {"id": "model", "supported_protocols": raw_protocols}
     ) == expected
+
+
+@pytest.mark.parametrize(
+    ("record", "expected"),
+    [
+        (
+            {"id": "gpt-image-2", "supported_endpoint_types": ["openai"]},
+            ["openai:image-generations"],
+        ),
+        (
+            {
+                "id": "grok-4.20-multi-agent-xhigh",
+                "supported_endpoint_types": ["openai"],
+            },
+            ["openai:chat-completions"],
+        ),
+        (
+            {"id": "mimo-v2.5-tts", "supported_endpoint_types": []},
+            ["openai:chat-completions", "openai:audio-speech", "minimax:t2a_v2"],
+        ),
+        (
+            {"id": "minimax-speech-2.8-turbo", "supported_endpoint_types": []},
+            ["openai:chat-completions", "openai:audio-speech", "minimax:t2a_v2"],
+        ),
+        (
+            {"id": "minimax-m3:free", "supported_endpoint_types": []},
+            ["openai:chat-completions"],
+        ),
+    ],
+)
+def test_supported_protocols_from_record_infers_gateway_endpoint_types(record, expected):
+    assert gateway.supported_protocols_from_record(record) == expected
 
 
 def test_call_protocol_converts_prompt_to_openai_messages(monkeypatch):
