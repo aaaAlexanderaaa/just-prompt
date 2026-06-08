@@ -1,0 +1,18 @@
+{
+  "default_models": "gateway:glm-4.7",
+  "gateway": {
+    "base_url": "https://tokendance.space/gateway/v1"
+  },
+  "model_categories": {},
+  "model_defaults": {
+    "categories": {
+      "image": {
+        "size": "4k",
+        "quality": "auto",
+        "n": 1,
+        "output_format": "png"
+      }
+    },
+    "models": {}
+  }
+}

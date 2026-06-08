@@ -123,6 +123,20 @@ def _bool_argument(value: Any, default: bool = False) -> bool:
     return bool(value)
 
 
+def _optional_bool_argument(value: Any) -> Optional[bool]:
+    if value is None:
+        return None
+    return _bool_argument(value)
+
+
+def _optional_float_argument(value: Any) -> Optional[float]:
+    return None if value is None else float(value)
+
+
+def _optional_int_argument(value: Any) -> Optional[int]:
+    return None if value is None else int(value)
+
+
 # Tool names enum
 class JustPromptTools:
     ASK_MODEL = "ask_model"
@@ -165,18 +179,18 @@ class AskModelSchema(BaseModel):
 
 class GatewaySpeechSchema(BaseModel):
     text: str = Field(..., description="Text to synthesize into speech")
-    voice_id: str = Field("male-qn-qingse", description="Voice ID for speech protocols that accept one")
-    output_path: Optional[str] = Field(None, description="Optional path for the generated audio file. Defaults to generated/<model>-<utc>.mp3 under the configured file root.")
-    speed: float = Field(1.0, description="Voice speed")
-    volume: float = Field(1.0, description="Voice volume; sent as MiniMax voice_setting.vol")
-    pitch: int = Field(0, description="Voice pitch")
-    sample_rate: int = Field(32000, description="Audio sample rate")
-    bitrate: int = Field(128000, description="Audio bitrate")
-    audio_format: str = Field("mp3", description="Audio format such as mp3, wav, pcm, or opus")
-    channel: int = Field(1, description="Audio channel count")
+    voice_id: Optional[str] = Field(None, description="Voice ID for speech protocols that accept one. Omit to use the configured default.")
+    output_path: Optional[str] = Field(None, description="Optional audio file path or output directory. Directory paths save generated/<model>-style filenames inside that directory; omitted paths default to generated/<model>-<utc>.mp3 under the configured file root.")
+    speed: Optional[float] = Field(None, description="Voice speed. Omit to use the configured default.")
+    volume: Optional[float] = Field(None, description="Voice volume; sent as MiniMax voice_setting.vol. Omit to use the configured default.")
+    pitch: Optional[int] = Field(None, description="Voice pitch. Omit to use the configured default.")
+    sample_rate: Optional[int] = Field(None, description="Audio sample rate. Omit to use the configured default.")
+    bitrate: Optional[int] = Field(None, description="Audio bitrate. Omit to use the configured default.")
+    audio_format: Optional[str] = Field(None, description="Audio format such as mp3, wav, pcm, or opus. Omit to use the configured default.")
+    channel: Optional[int] = Field(None, description="Audio channel count. Omit to use the configured default.")
     language_boost: Optional[str] = Field(None, description="Optional MiniMax language_boost value")
     emotion: Optional[str] = Field(None, description="Optional MiniMax voice emotion")
-    subtitle_enable: bool = Field(False, description="Whether to request subtitle data")
+    subtitle_enable: Optional[bool] = Field(None, description="Whether to request subtitle data. Omit to use the configured default.")
     payload: Optional[Union[Dict[str, Any], str]] = Field(None, description="Optional raw payload overrides")
     options: Optional[Union[Dict[str, Any], str]] = Field(None, description="Optional gateway call options: protocol, api_key, base_url, timeout, media_download_timeout")
 
@@ -193,13 +207,13 @@ class GatewayChatSchema(BaseModel):
 
 class GptImage2Schema(BaseModel):
     prompt: str = Field(..., description="Image prompt")
-    output_path: Optional[str] = Field(None, description="Optional path for the generated image file. Defaults to generated/gpt-image-2-<utc>.png under the configured file root.")
-    size: str = Field("auto", description="Image size. Use auto for provider default, or explicit values such as 1024x1024, 1024x1536, or 1536x1024.")
-    quality: str = Field("auto", description="Image quality. Use auto for normal use, or pass a provider-supported explicit value when you intentionally want to override it.")
-    n: int = Field(1, description="Number of images to generate")
+    output_path: Optional[str] = Field(None, description="Optional image file path or output directory. Directory paths save generated filenames inside that directory; omitted paths default to generated/gpt-image-2-<utc>.png under the configured file root.")
+    size: Optional[str] = Field(None, description="Image size. Omit to use the configured default; this project defaults image models to 4k.")
+    quality: Optional[str] = Field(None, description="Image quality. Omit to use the configured default, or pass a provider-supported explicit value when you intentionally want to override it.")
+    n: Optional[int] = Field(None, description="Number of images to generate. Omit to use the configured default.")
     background: Optional[str] = Field(None, description="Optional background setting")
     moderation: Optional[str] = Field(None, description="Optional moderation setting")
-    output_format: str = Field("png", description="Output format such as png, jpeg, or webp")
+    output_format: Optional[str] = Field(None, description="Output format such as png, jpeg, or webp. Omit to use the configured default.")
     output_compression: Optional[int] = Field(None, description="Optional compression level for supported formats")
     payload: Optional[Union[Dict[str, Any], str]] = Field(None, description="Optional raw image generation payload overrides")
     options: Optional[Union[Dict[str, Any], str]] = Field(None, description="Optional gateway call options: api_key, base_url, timeout, media_download_timeout")
@@ -408,18 +422,18 @@ async def serve(default_models: str = DEFAULT_MODEL) -> None:
                 options = parse_json_object_parameter(arguments.get("options"), "options")
                 response = generate_mimo_v2_5_tts(
                     text=arguments["text"],
-                    voice_id=arguments.get("voice_id", "male-qn-qingse"),
+                    voice_id=arguments.get("voice_id"),
                     output_path=arguments.get("output_path"),
-                    speed=float(arguments.get("speed", 1.0)),
-                    volume=float(arguments.get("volume", 1.0)),
-                    pitch=int(arguments.get("pitch", 0)),
-                    sample_rate=int(arguments.get("sample_rate", 32000)),
-                    bitrate=int(arguments.get("bitrate", 128000)),
-                    audio_format=arguments.get("audio_format", "mp3"),
-                    channel=int(arguments.get("channel", 1)),
+                    speed=_optional_float_argument(arguments.get("speed")),
+                    volume=_optional_float_argument(arguments.get("volume")),
+                    pitch=_optional_int_argument(arguments.get("pitch")),
+                    sample_rate=_optional_int_argument(arguments.get("sample_rate")),
+                    bitrate=_optional_int_argument(arguments.get("bitrate")),
+                    audio_format=arguments.get("audio_format"),
+                    channel=_optional_int_argument(arguments.get("channel")),
                     language_boost=arguments.get("language_boost"),
                     emotion=arguments.get("emotion"),
-                    subtitle_enable=_bool_argument(arguments.get("subtitle_enable"), False),
+                    subtitle_enable=_optional_bool_argument(arguments.get("subtitle_enable")),
                     payload=payload,
                     options=options,
                 )
@@ -430,18 +444,18 @@ async def serve(default_models: str = DEFAULT_MODEL) -> None:
                 options = parse_json_object_parameter(arguments.get("options"), "options")
                 response = generate_minimax_speech_2_8_turbo(
                     text=arguments["text"],
-                    voice_id=arguments.get("voice_id", "male-qn-qingse"),
+                    voice_id=arguments.get("voice_id"),
                     output_path=arguments.get("output_path"),
-                    speed=float(arguments.get("speed", 1.0)),
-                    volume=float(arguments.get("volume", 1.0)),
-                    pitch=int(arguments.get("pitch", 0)),
-                    sample_rate=int(arguments.get("sample_rate", 32000)),
-                    bitrate=int(arguments.get("bitrate", 128000)),
-                    audio_format=arguments.get("audio_format", "mp3"),
-                    channel=int(arguments.get("channel", 1)),
+                    speed=_optional_float_argument(arguments.get("speed")),
+                    volume=_optional_float_argument(arguments.get("volume")),
+                    pitch=_optional_int_argument(arguments.get("pitch")),
+                    sample_rate=_optional_int_argument(arguments.get("sample_rate")),
+                    bitrate=_optional_int_argument(arguments.get("bitrate")),
+                    audio_format=arguments.get("audio_format"),
+                    channel=_optional_int_argument(arguments.get("channel")),
                     language_boost=arguments.get("language_boost"),
                     emotion=arguments.get("emotion"),
-                    subtitle_enable=_bool_argument(arguments.get("subtitle_enable"), False),
+                    subtitle_enable=_optional_bool_argument(arguments.get("subtitle_enable")),
                     payload=payload,
                     options=options,
                 )
@@ -467,13 +481,13 @@ async def serve(default_models: str = DEFAULT_MODEL) -> None:
                 response = generate_gpt_image_2(
                     prompt=arguments["prompt"],
                     output_path=arguments.get("output_path"),
-                    size=arguments.get("size", "auto"),
-                    quality=arguments.get("quality", "auto"),
-                    n=int(arguments.get("n", 1)),
+                    size=arguments.get("size"),
+                    quality=arguments.get("quality"),
+                    n=_optional_int_argument(arguments.get("n")),
                     background=arguments.get("background"),
                     moderation=arguments.get("moderation"),
-                    output_format=arguments.get("output_format", "png"),
-                    output_compression=arguments.get("output_compression"),
+                    output_format=arguments.get("output_format"),
+                    output_compression=_optional_int_argument(arguments.get("output_compression")),
                     payload=payload,
                     options=options,
                 )

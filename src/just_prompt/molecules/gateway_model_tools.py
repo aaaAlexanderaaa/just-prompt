@@ -12,6 +12,7 @@ from urllib import error, request
 
 from ..atoms.llm_providers import gateway
 from ..atoms.shared.file_access import configured_file_root, resolve_checked_path
+from ..atoms.shared.model_defaults import defaults_for_model
 
 MIMO_V2_5_TTS_MODEL = "mimo-v2.5-tts"
 MINIMAX_SPEECH_2_8_TURBO_MODEL = "minimax-speech-2.8-turbo"
@@ -31,13 +32,29 @@ def _utc_stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 
+def _default_output_filename(prefix: str, suffix: str) -> str:
+    return f"{prefix}-{_utc_stamp()}{suffix}"
+
+
 def _default_output_path(prefix: str, suffix: str) -> Path:
-    return configured_file_root() / "generated" / f"{prefix}-{_utc_stamp()}{suffix}"
+    return configured_file_root() / "generated" / _default_output_filename(prefix, suffix)
 
 
 def _output_path(output_path: Optional[str], prefix: str, suffix: str) -> Path:
-    path = Path(output_path) if output_path else _default_output_path(prefix, suffix)
+    if output_path and output_path.strip():
+        raw_path = output_path.strip()
+        path = Path(raw_path)
+        directory_hint = raw_path.endswith(("/", "\\"))
+    else:
+        path = _default_output_path(prefix, suffix)
+        directory_hint = False
+
     resolved = resolve_checked_path(str(path), must_exist=False)
+    if directory_hint or (resolved.exists() and resolved.is_dir()):
+        resolved = resolve_checked_path(
+            str(resolved / _default_output_filename(prefix, suffix)),
+            must_exist=False,
+        )
     resolved.parent.mkdir(parents=True, exist_ok=True)
     return resolved
 
@@ -233,6 +250,7 @@ def _summarize_image_response(
     response: Any,
     *,
     output_path: Optional[str],
+    prefix: str,
     output_format: str,
     media_download_timeout: float,
 ) -> str:
@@ -247,7 +265,7 @@ def _summarize_image_response(
     saved_bytes = []
     urls = []
     suffix = _safe_suffix(output_format, "png")
-    base_path = _output_path(output_path, "gpt-image-2", suffix)
+    base_path = _output_path(output_path, prefix, suffix)
 
     for index, record in enumerate(records):
         url = record.get("url")
@@ -297,28 +315,46 @@ def _merge_payload(base_payload: Dict[str, Any], payload: Optional[Dict[str, Any
     return merged
 
 
+def _defaulted(value: Any, defaults: Dict[str, Any], key: str, fallback: Any) -> Any:
+    return value if value is not None else defaults.get(key, fallback)
+
+
 def generate_minimax_tts(
     model: str,
     *,
     text: str,
-    voice_id: str = DEFAULT_VOICE_ID,
+    voice_id: Optional[str] = None,
     output_path: Optional[str] = None,
-    speed: float = 1.0,
-    volume: float = 1.0,
-    pitch: int = 0,
-    sample_rate: int = 32000,
-    bitrate: int = 128000,
-    audio_format: str = "mp3",
-    channel: int = 1,
+    speed: Optional[float] = None,
+    volume: Optional[float] = None,
+    pitch: Optional[int] = None,
+    sample_rate: Optional[int] = None,
+    bitrate: Optional[int] = None,
+    audio_format: Optional[str] = None,
+    channel: Optional[int] = None,
     language_boost: Optional[str] = None,
     emotion: Optional[str] = None,
-    subtitle_enable: bool = False,
+    subtitle_enable: Optional[bool] = None,
     payload: Optional[Dict[str, Any]] = None,
     options: Optional[Dict[str, Any]] = None,
 ) -> str:
     """
     Generate speech through the configured gateway.
     """
+    defaults = defaults_for_model(model, "speech")
+    voice_id = _defaulted(voice_id, defaults, "voice_id", DEFAULT_VOICE_ID)
+    speed = float(_defaulted(speed, defaults, "speed", 1.0))
+    volume = float(_defaulted(volume, defaults, "volume", 1.0))
+    pitch = int(_defaulted(pitch, defaults, "pitch", 0))
+    sample_rate = int(_defaulted(sample_rate, defaults, "sample_rate", 32000))
+    bitrate = int(_defaulted(bitrate, defaults, "bitrate", 128000))
+    audio_format = str(_defaulted(audio_format, defaults, "audio_format", "mp3"))
+    channel = int(_defaulted(channel, defaults, "channel", 1))
+    language_boost = _defaulted(language_boost, defaults, "language_boost", None)
+    emotion = _defaulted(emotion, defaults, "emotion", None)
+    subtitle_enable = bool(_defaulted(subtitle_enable, defaults, "subtitle_enable", False))
+    output_path = _defaulted(output_path, defaults, "output_path", None)
+
     options = dict(options or {})
     protocol = str(options.pop("protocol", "auto"))
     media_download_timeout = float(options.pop("media_download_timeout", 120.0))
@@ -390,7 +426,8 @@ def generate_minimax_speech_2_8_turbo(**kwargs: Any) -> str:
     return generate_minimax_tts(MINIMAX_SPEECH_2_8_TURBO_MODEL, **kwargs)
 
 
-def ask_minimax_m3_free(
+def ask_gateway_chat_model(
+    model: str,
     *,
     prompt: str,
     system_prompt: Optional[str] = None,
@@ -399,7 +436,17 @@ def ask_minimax_m3_free(
     top_p: Optional[float] = None,
     payload: Optional[Dict[str, Any]] = None,
     options: Optional[Dict[str, Any]] = None,
+    default_timeout: float = 300.0,
+    defaults_category: str = "text",
 ) -> str:
+    """
+    Ask an OpenAI chat-completions compatible gateway model.
+    """
+    defaults = defaults_for_model(model, defaults_category)
+    temperature = _defaulted(temperature, defaults, "temperature", None)
+    max_tokens = _defaulted(max_tokens, defaults, "max_tokens", None)
+    top_p = _defaulted(top_p, defaults, "top_p", None)
+
     messages = []
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
@@ -414,28 +461,48 @@ def ask_minimax_m3_free(
         request_payload["top_p"] = top_p
 
     response = gateway.call_protocol(
-        MINIMAX_M3_FREE_MODEL,
+        model,
         OPENAI_CHAT_PROTOCOL,
         payload=_merge_payload(request_payload, payload),
-        options=_gateway_call_options(options, default_timeout=300.0),
+        options=_gateway_call_options(options, default_timeout=default_timeout),
     )
     return gateway.extract_protocol_text(response, OPENAI_CHAT_PROTOCOL)
 
 
-def generate_gpt_image_2(
+def ask_minimax_m3_free(**kwargs: Any) -> str:
+    return ask_gateway_chat_model(MINIMAX_M3_FREE_MODEL, **kwargs)
+
+
+def generate_openai_image(
+    model: str,
     *,
     prompt: str,
     output_path: Optional[str] = None,
-    size: str = "auto",
-    quality: str = "auto",
-    n: int = 1,
+    size: Optional[str] = None,
+    quality: Optional[str] = None,
+    n: Optional[int] = None,
     background: Optional[str] = None,
     moderation: Optional[str] = None,
-    output_format: str = "png",
+    output_format: Optional[str] = None,
     output_compression: Optional[int] = None,
     payload: Optional[Dict[str, Any]] = None,
     options: Optional[Dict[str, Any]] = None,
 ) -> str:
+    defaults = defaults_for_model(model, "image")
+    size = str(_defaulted(size, defaults, "size", "auto"))
+    quality = str(_defaulted(quality, defaults, "quality", "auto"))
+    n = int(_defaulted(n, defaults, "n", 1))
+    background = _defaulted(background, defaults, "background", None)
+    moderation = _defaulted(moderation, defaults, "moderation", None)
+    output_format = str(_defaulted(output_format, defaults, "output_format", "png"))
+    output_compression = _defaulted(
+        output_compression,
+        defaults,
+        "output_compression",
+        None,
+    )
+    output_path = _defaulted(output_path, defaults, "output_path", None)
+
     options = dict(options or {})
     media_download_timeout = float(options.pop("media_download_timeout", 120.0))
 
@@ -456,7 +523,7 @@ def generate_gpt_image_2(
         request_payload["output_compression"] = output_compression
 
     response = gateway.call_protocol(
-        GPT_IMAGE_2_MODEL,
+        model,
         OPENAI_IMAGE_PROTOCOL,
         payload=_merge_payload(request_payload, payload),
         options=_gateway_call_options(options, default_timeout=900.0),
@@ -464,8 +531,50 @@ def generate_gpt_image_2(
     return _summarize_image_response(
         response,
         output_path=output_path,
+        prefix=model.replace(":", "-"),
         output_format=output_format,
         media_download_timeout=media_download_timeout,
+    )
+
+
+def generate_gpt_image_2(**kwargs: Any) -> str:
+    return generate_openai_image(GPT_IMAGE_2_MODEL, **kwargs)
+
+
+def ask_gateway_search_model(
+    model: str,
+    *,
+    query: str,
+    system_prompt: Optional[str] = None,
+    temperature: Optional[float] = None,
+    max_tokens: Optional[int] = None,
+    top_p: Optional[float] = None,
+    search_parameters: Optional[Dict[str, Any]] = None,
+    payload: Optional[Dict[str, Any]] = None,
+    options: Optional[Dict[str, Any]] = None,
+    default_timeout: float = 1200.0,
+) -> str:
+    defaults = defaults_for_model(model, "search")
+    temperature = _defaulted(temperature, defaults, "temperature", None)
+    max_tokens = _defaulted(max_tokens, defaults, "max_tokens", None)
+    top_p = _defaulted(top_p, defaults, "top_p", None)
+    search_parameters = _defaulted(search_parameters, defaults, "search_parameters", None)
+
+    request_payload: Dict[str, Any] = {}
+    if search_parameters:
+        request_payload["search_parameters"] = search_parameters
+
+    return ask_gateway_chat_model(
+        model,
+        prompt=query,
+        system_prompt=system_prompt,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        top_p=top_p,
+        payload=_merge_payload(request_payload, payload),
+        options=options,
+        default_timeout=default_timeout,
+        defaults_category="search",
     )
 
 
@@ -480,25 +589,14 @@ def ask_grok_4_20_multi_agent_xhigh(
     payload: Optional[Dict[str, Any]] = None,
     options: Optional[Dict[str, Any]] = None,
 ) -> str:
-    messages = []
-    if system_prompt:
-        messages.append({"role": "system", "content": system_prompt})
-    messages.append({"role": "user", "content": query})
-
-    request_payload: Dict[str, Any] = {"messages": messages, "stream": False}
-    if temperature is not None:
-        request_payload["temperature"] = temperature
-    if max_tokens is not None:
-        request_payload["max_tokens"] = max_tokens
-    if top_p is not None:
-        request_payload["top_p"] = top_p
-    if search_parameters:
-        request_payload["search_parameters"] = search_parameters
-
-    response = gateway.call_protocol(
+    return ask_gateway_search_model(
         GROK_4_20_MULTI_AGENT_XHIGH_MODEL,
-        OPENAI_CHAT_PROTOCOL,
-        payload=_merge_payload(request_payload, payload),
-        options=_gateway_call_options(options, default_timeout=1200.0),
+        query=query,
+        system_prompt=system_prompt,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        top_p=top_p,
+        search_parameters=search_parameters,
+        payload=payload,
+        options=options,
     )
-    return gateway.extract_protocol_text(response, OPENAI_CHAT_PROTOCOL)

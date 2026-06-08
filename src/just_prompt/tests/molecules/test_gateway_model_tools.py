@@ -225,6 +225,28 @@ def test_tts_tool_downloads_audio_url(monkeypatch, tmp_path):
     assert response["source_audio_url"] == "https://cdn.example.test/narration.mp3"
 
 
+def test_tts_tool_accepts_output_directory(monkeypatch, tmp_path):
+    encoded = base64.b64encode(b"directory-mp3").decode("ascii")
+
+    def fake_call_protocol(model, protocol, payload=None, options=None):
+        return {"choices": [{"message": {"audio": {"data": encoded}}}]}
+
+    monkeypatch.setattr(tools.gateway, "call_protocol", fake_call_protocol)
+    monkeypatch.setenv("JUST_PROMPT_FILE_ROOT", str(tmp_path))
+
+    response_text = tools.generate_mimo_v2_5_tts(
+        text="Read a short home archive note.",
+        output_path=str(tmp_path),
+    )
+
+    response = json.loads(response_text)
+    saved_path = Path(response["saved_audio_path"])
+    assert saved_path.parent == tmp_path
+    assert saved_path.name.startswith("mimo-v2.5-tts-")
+    assert saved_path.suffix == ".mp3"
+    assert saved_path.read_bytes() == b"directory-mp3"
+
+
 def test_minimax_m3_free_uses_non_streaming_chat(monkeypatch):
     calls = {}
 
@@ -327,7 +349,7 @@ def test_gpt_image_2_prompt_only_uses_auto_defaults_and_downloads_url(
     assert calls["payload"] == {
         "prompt": "A compact labeled-free illustration of a home lab shelf.",
         "n": 1,
-        "size": "auto",
+        "size": "4k",
         "quality": "auto",
         "output_format": "png",
     }
@@ -338,6 +360,28 @@ def test_gpt_image_2_prompt_only_uses_auto_defaults_and_downloads_url(
     assert response["saved_image_bytes"] == [len(b"downloaded-png")]
     assert response["source_image_urls"] == ["https://cdn.example.test/home-lab.png"]
     assert "model_response" not in response
+
+
+def test_gpt_image_2_accepts_output_directory(monkeypatch, tmp_path):
+    encoded = base64.b64encode(b"directory-png").decode("ascii")
+
+    def fake_call_protocol(model, protocol, payload=None, options=None):
+        return {"data": [{"b64_json": encoded}]}
+
+    monkeypatch.setattr(tools.gateway, "call_protocol", fake_call_protocol)
+    monkeypatch.setenv("JUST_PROMPT_FILE_ROOT", str(tmp_path))
+
+    response_text = tools.generate_gpt_image_2(
+        prompt="A clean square home lab concept image, no text.",
+        output_path=str(tmp_path),
+    )
+
+    response = json.loads(response_text)
+    saved_path = Path(response["saved_image_paths"][0])
+    assert saved_path.parent == tmp_path
+    assert saved_path.name.startswith("gpt-image-2-")
+    assert saved_path.suffix == ".png"
+    assert saved_path.read_bytes() == b"directory-png"
 
 
 def test_grok_search_uses_long_non_streaming_chat(monkeypatch):

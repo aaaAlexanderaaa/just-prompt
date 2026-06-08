@@ -21,7 +21,7 @@ The following MCP tools are available in the server:
   - Parameters:
     - `text` (required): Text to synthesize
     - `voice_id` (default: `male-qn-qingse`, used by speech protocols that accept one)
-    - `output_path` (optional): Audio output path. Defaults to `generated/mimo-v2.5-tts-<utc>.mp3`
+    - `output_path` (optional): Audio file path or output directory. Defaults to `generated/mimo-v2.5-tts-<utc>.mp3`
     - `payload` / `options` (optional): Raw payload overrides and gateway options. Uses assistant-role chat audio by default; pass `options.protocol` as `openai:audio-speech` or `minimax:t2a_v2` when your gateway supports those routes.
   - Output: JSON with `saved_audio_path` and `saved_audio_bytes`; URL audio responses are downloaded before the tool returns.
 
@@ -39,8 +39,8 @@ The following MCP tools are available in the server:
 - **`gpt_image_2`**: Generate images with `gpt-image-2`
   - Parameters:
     - `prompt` (required)
-    - `output_path` (optional): Image output path. Defaults to `generated/gpt-image-2-<utc>.png`
-    - `size` (default: `auto`), `quality` (default: `auto`), `n` (default: `1`), `background`, `moderation`, `output_format` (default: `png`), `output_compression`
+    - `output_path` (optional): Image file path or output directory. Defaults to `generated/gpt-image-2-<utc>.png`
+    - `size` (configured default, currently `4k`), `quality` (configured default, currently `auto`), `n` (configured default, currently `1`), `background`, `moderation`, `output_format` (configured default, currently `png`), `output_compression`
     - `payload` / `options` (optional)
   - Output: JSON with `saved_image_paths` and `saved_image_bytes`; URL image responses are downloaded before the tool returns.
 
@@ -134,20 +134,24 @@ The gateway provider is the shortest path for a Model-as-Tool setup:
 main agent -> MCP client -> ask_model(model, prompt, options?) -> your gateway -> model
 ```
 
-Configure the gateway explicitly:
+Configure non-secret gateway settings in `just-prompt.config.json`:
+
+```json
+{
+  "gateway": {
+    "base_url": "https://your-gateway.example.com/v1"
+  }
+}
+```
+
+Keep the gateway API key in `.env` or your shell:
 
 ```bash
-MODEL_GATEWAY_BASE_URL=https://your-gateway.example.com/v1
-MODEL_GATEWAY_PROTOCOL_BASE_URL=https://your-gateway.example.com
 MODEL_GATEWAY_API_KEY=your_gateway_api_key
 ```
 
-For a plain OpenAI-compatible API gateway, `MODEL_GATEWAY_PROTOCOL_BASE_URL` can be omitted:
-
-```bash
-MODEL_GATEWAY_BASE_URL=https://your-gateway.example.com/v1
-MODEL_GATEWAY_API_KEY=your_gateway_api_key
-```
+For gateways that need a separate non-`/v1` protocol root, add
+`gateway.protocol_base_url` to `just-prompt.config.json`.
 
 Use `ask_model` for the common "one prompt in, one result out" path. It looks at gateway model metadata and automatically selects the first compatible protocol it knows how to call:
 
@@ -176,14 +180,58 @@ to local files.
 
 ## Dedicated Gateway Model Tools
 
-These tools use `MODEL_GATEWAY_BASE_URL` and `MODEL_GATEWAY_API_KEY`. Set them
-in `.env`, export them in your shell, or pass them through your MCP client's
-environment configuration.
+These tools use the shared `just-prompt.config.json` plus secrets from `.env` or
+your shell. CLI calls and the MCP server read the same non-secret config.
+
+Config file roles are intentionally narrow:
+
+- `just-prompt.config.json`: shared non-secret runtime config for both CLI and MCP.
+- `.env`: secrets and provider credentials only.
+- `.mcp.json`: MCP client launch command only; no model defaults or gateway config.
+- `pyproject.toml` and `uv.lock`: package/dependency metadata, not runtime config.
 
 Media outputs are written inside the configured file root. By default that is
 the MCP server's current working directory; set `JUST_PROMPT_FILE_ROOT` if you
 want generated files under a different allowed directory. If `output_path` is
-omitted, files are saved under `generated/`.
+omitted, files are saved under `generated/`. If `output_path` points to a
+directory such as `./`, the tool creates a timestamped filename inside it.
+
+Model defaults are configurable in `just-prompt.config.json`. The project reads
+that file by default, then merges `JUST_PROMPT_CONFIG_FILE` and
+`JUST_PROMPT_CONFIG` if they are set. Defaults merge in this order:
+
+- code fallback
+- category defaults such as `image`
+- model defaults such as `gpt-image-2`
+- explicit MCP/CLI arguments
+
+Example config file:
+
+```json
+{
+  "gateway": {
+    "base_url": "https://tokendance.space/gateway/v1"
+  },
+  "model_categories": {
+    "your-custom-image-model": "image"
+  },
+  "model_defaults": {
+    "categories": {
+      "image": {
+        "size": "4k",
+        "quality": "auto",
+        "n": 1,
+        "output_format": "png"
+      }
+    },
+    "models": {
+      "gpt-image-2": {
+        "size": "4k"
+      }
+    }
+  }
+}
+```
 
 ### `mimo_v2_5_tts`
 
@@ -273,7 +321,7 @@ Required:
 
 Defaults:
 
-- `size`: `auto`
+- `size`: `4k` from `just-prompt.config.json`
 - `quality`: `auto`
 - `n`: `1`
 - `output_format`: `png`
@@ -283,8 +331,8 @@ Defaults:
 
 Accepted parameters:
 
-- `size`: `auto`, `1024x1024`, `1024x1536`, `1536x1024`, or another value accepted by the gateway/model.
-- `quality`: `auto` or another explicit quality value accepted by the gateway/model. Leave it at `auto` for normal use.
+- `size`: configured default is `4k` in this project, or another value accepted by the gateway/model.
+- `quality`: configured default is `auto`, or another explicit quality value accepted by the gateway/model.
 - `n`: number of images. Default is `1`.
 - `background`, `moderation`, `output_format`, `output_compression`
 - `payload`: raw image-generation overrides.
@@ -296,7 +344,7 @@ Output contract:
 - It handles base64/data responses and HTTP(S) image URLs.
 - Returned JSON includes `saved_image_paths` and `saved_image_bytes`; when the gateway returned a URL, it is retained as `source_image_urls` for traceability.
 
-Prompt-only auto call:
+Prompt-only configured-defaults call:
 
 ```json
 {
@@ -315,8 +363,9 @@ Explicit-size call:
 }
 ```
 
-On this gateway, examples keep `quality` at `auto`; override it only when the
-task itself requires a specific quality setting.
+On this gateway, examples keep `quality` at `auto` and use the configured image
+size default. Override those fields only when the task itself requires a
+specific setting.
 
 Typical result:
 
@@ -358,6 +407,91 @@ Example:
   "query": "Find recent privacy-minded local AI tooling for home lab operators. Give three concise bullets with dates."
 }
 ```
+
+## One-Shot CLI Calls
+
+`just-prompt` still starts the MCP stdio server by default. For direct shell
+usage, use the `call` subcommand:
+
+```bash
+uv run just-prompt call MODEL [--category text|speech|image|search] [adapter options] [input]
+```
+
+The CLI chooses an adapter in this order:
+
+- If `--category` is provided, use that adapter.
+- If the model is in `model_categories` or the built-in mapping, use the mapped
+  adapter.
+- Otherwise, default to the `text` adapter.
+
+Built-in model mappings:
+
+- `mimo-v2.5-tts`: `speech`
+- `minimax-speech-2.8-turbo`: `speech`
+- `minimax-m3:free`: `text`
+- `gpt-image-2`: `image`
+- `grok-4.20-multi-agent-xhigh`: `search`
+
+Add or override mappings in `just-prompt.config.json` under `model_categories`.
+
+MCP tool-style aliases such as `gpt_image_2` are accepted and normalized to the
+real model ID.
+
+To inspect the accepted parameters and defaults for the resolved adapter, ask
+for help after the model name:
+
+```bash
+uv run just-prompt call gpt-image-2 --help
+uv run just-prompt call some-new-image-model --category image --help
+uv run just-prompt call unknown-chat-model --help
+```
+
+Examples:
+
+```bash
+uv run just-prompt call minimax-m3:free "给我三条家庭知识库整理建议。"
+```
+
+```bash
+uv run just-prompt call gpt-image-2 "A crisp square illustration of a compact home lab desk, warm morning light, no text."
+```
+
+```bash
+uv run just-prompt call mimo-v2.5-tts --text "请用自然旁白语气朗读这段家庭档案说明。"
+```
+
+```bash
+uv run just-prompt call grok-4.20-multi-agent-xhigh --query "Find recent privacy-minded local AI tooling for home lab operators. Give three concise bullets with dates."
+```
+
+Text adapter parameters:
+
+- Primary input: positional input, `--prompt`, `--prompt-file`, or stdin.
+- Optional: `--system-prompt`, `--system-prompt-file`, `--temperature`, `--top-p`, `--max-tokens`.
+- Gateway plumbing: `--base-url`, `--api-key`, `--timeout`, `--payload`, `--options`.
+- `--max-tokens` is a hard output-length cap; omit it for normal full-answer behavior.
+
+Speech adapter parameters:
+
+- Primary input: positional input, `--text`, `--text-file`, or stdin.
+- Output: `--output-path` accepts a file path or directory; omitted paths default to `generated/<model>-<utc>.mp3`.
+- Voice/audio: `--voice-id`, `--speed`, `--volume`, `--pitch`, `--sample-rate`, `--bitrate`, `--audio-format`, `--channel`, `--language-boost`, `--emotion`, `--subtitle-enable`.
+- Protocol/gateway: `--protocol`, `--base-url`, `--api-key`, `--timeout`, `--media-download-timeout`, `--payload`, `--options`.
+
+Image adapter parameters:
+
+- Primary input: positional input, `--prompt`, `--prompt-file`, or stdin.
+- Output: `--output-path` accepts a file path or directory; omitted paths default to `generated/<model>-<utc>.png`.
+- Generation: `--size` (project default `4k`), `--quality` (default `auto`), `--n` (default `1`), `--background`, `--moderation`, `--output-format`, `--output-compression`.
+- Gateway: `--base-url`, `--api-key`, `--timeout`, `--media-download-timeout`, `--payload`, `--options`.
+- The command returns only after image data or image URLs have been saved as local files.
+
+Search adapter parameters:
+
+- Primary input: positional input, `--query`, `--query-file`, or stdin.
+- Optional: `--system-prompt`, `--system-prompt-file`, `--temperature`, `--top-p`, `--max-tokens`, `--search-parameters`.
+- Gateway: `--base-url`, `--api-key`, `--timeout`, `--payload`, `--options`.
+- `--max-tokens` is a hard output-length cap; omit it for normal full-answer behavior.
 
 ```json
 {
@@ -415,13 +549,13 @@ Create a `.env` file with your API keys (you can copy the `.env.sample` file):
 cp .env.sample .env
 ```
 
-Then edit the `.env` file to add your API keys (or export them in your shell):
+Then edit the `.env` file to add your API keys (or export them in your shell).
+Non-secret gateway URLs, file roots, model categories, and model defaults belong
+in `just-prompt.config.json`.
 
 ```
 OPENAI_API_KEY=your_openai_api_key_here
 MODEL_GATEWAY_API_KEY=your_gateway_api_key_here
-MODEL_GATEWAY_BASE_URL=https://your-gateway.example.com/v1
-MODEL_GATEWAY_PROTOCOL_BASE_URL=https://your-gateway.example.com
 ANTHROPIC_API_KEY=your_anthropic_api_key_here
 GEMINI_API_KEY=your_gemini_api_key_here
 GROQ_API_KEY=your_groq_api_key_here
@@ -429,14 +563,20 @@ DEEPSEEK_API_KEY=your_deepseek_api_key_here
 OLLAMA_HOST=http://localhost:11434
 ```
 
-File-based tools are restricted to the server's current working directory by default. Set `JUST_PROMPT_FILE_ROOT` or pass `--file-access-root` to allow reads and writes inside a different directory.
+File-based tools are restricted to the server's current working directory by
+default. Set `file_access_root` in `just-prompt.config.json` to allow reads and
+writes inside a different directory. `JUST_PROMPT_FILE_ROOT` and
+`--file-access-root` are runtime overrides.
 
 ## Claude Code Installation
 > In all these examples, replace the directory with the path to the just-prompt directory.
 
-Default models are set to the gateway provider (`gateway:glm-4.7`) unless you pass `--default-models`.
+Default models are set in `just-prompt.config.json` (`gateway:glm-4.7` in this
+project) unless you pass `--default-models`.
 
-If you use Claude Code right out of the repository you can see in the .mcp.json file we set the default models to...
+If you use Claude Code right out of the repository, `.mcp.json` only describes
+how to launch the MCP server. Non-secret app settings live in
+`just-prompt.config.json`; secrets live in `.env`.
 
 ```
 {
@@ -448,9 +588,7 @@ If you use Claude Code right out of the repository you can see in the .mcp.json 
         "--directory",
         ".",
         "run",
-        "just-prompt",
-        "--default-models",
-        "gateway:glm-4.7"
+        "just-prompt"
       ],
       "env": {}
     }
@@ -458,7 +596,11 @@ If you use Claude Code right out of the repository you can see in the .mcp.json 
 }
 ```
 
-The `--default-models` parameter sets the models to use when none are explicitly provided to the API endpoints. The first model in the list is also used for model name correction when needed. This can be a list of models separated by commas.
+The `default_models` config value sets the models to use when none are
+explicitly provided to the API endpoints. The first model in the list is also
+used for model name correction when needed. This can be a list of models
+separated by commas. The `--default-models` CLI flag still exists as a temporary
+override.
 
 When starting the server, it will automatically check which API keys are available in your environment and inform you which providers you can use. If a key is missing, the provider will be listed as unavailable, but the server will still start and can be used with the providers that are available.
 

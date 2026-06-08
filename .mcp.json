@@ -7,9 +7,7 @@
         "--directory",
         ".",
         "run",
-        "just-prompt",
-        "--default-models",
-        "gateway:glm-4.7"
+        "just-prompt"
       ],
       "env": {}
     }

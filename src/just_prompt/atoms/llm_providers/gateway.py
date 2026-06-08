@@ -1,8 +1,9 @@
 """
 Generic OpenAI-compatible gateway provider.
 
-Set MODEL_GATEWAY_BASE_URL and MODEL_GATEWAY_API_KEY to point it at any
-gateway that implements the supported protocol endpoints below.
+Set gateway.base_url in just-prompt.config.json and MODEL_GATEWAY_API_KEY in
+.env to point it at any gateway that implements the supported protocol
+endpoints below. Environment variables can still override config at runtime.
 """
 
 import json

@@ -6,6 +6,7 @@ from typing import List, Dict, Optional, Tuple
 import logging
 import os
 from .data_types import ModelProviders
+from .model_defaults import apply_config_env_defaults
 from .utils import split_provider_and_model, get_api_key
 
 logger = logging.getLogger(__name__)
@@ -61,6 +62,7 @@ def validate_provider_api_keys() -> Dict[str, bool]:
     Returns:
         Dictionary mapping provider names to availability status (True if available, False otherwise)
     """
+    apply_config_env_defaults()
     available_providers = {}
     
     # Check API keys for each provider
@@ -112,7 +114,7 @@ def print_provider_availability(detailed: bool = True) -> None:
             "groq": "GROQ_API_KEY",
             "deepseek": "DEEPSEEK_API_KEY",
             "ollama": "OLLAMA_HOST",
-            "gateway": "MODEL_GATEWAY_API_KEY and MODEL_GATEWAY_BASE_URL",
+            "gateway": "MODEL_GATEWAY_API_KEY and gateway.base_url in just-prompt.config.json",
         }
         
         logger.warning(f"The following providers are unavailable due to missing API keys:")
