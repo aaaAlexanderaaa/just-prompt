@@ -2,9 +2,8 @@
 Ollama provider implementation.
 """
 
-import os
-from typing import List
 import logging
+
 import ollama
 from dotenv import load_dotenv
 
@@ -44,10 +43,10 @@ def prompt(text: str, model: str) -> str:
         return response.message.content
     except Exception as e:
         logger.error(f"Error sending prompt to Ollama: {e}")
-        raise ValueError(f"Failed to get response from Ollama: {str(e)}")
+        raise ValueError(f"Failed to get response from Ollama: {str(e)}") from e
 
 
-def list_models() -> List[str]:
+def list_models() -> list[str]:
     """
     List available Ollama models.
 

@@ -7,8 +7,9 @@ import asyncio
 import json
 import os
 import sys
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, TextIO, Tuple
+from typing import Any, TextIO
 
 from dotenv import load_dotenv
 
@@ -45,7 +46,7 @@ class DefaultsHelpFormatter(argparse.ArgumentDefaultsHelpFormatter):
     pass
 
 
-def model_category_map() -> Dict[str, str]:
+def model_category_map() -> dict[str, str]:
     mapping = {
         normalize_model_id(model): category
         for model, category in DEFAULT_MODEL_CATEGORY_MAP.items()
@@ -54,7 +55,7 @@ def model_category_map() -> Dict[str, str]:
     return mapping
 
 
-def _known_provider(model: str) -> Optional[ModelProviders]:
+def _known_provider(model: str) -> ModelProviders | None:
     if ":" not in model:
         return None
     prefix, _ = split_provider_and_model(model)
@@ -73,7 +74,7 @@ def infer_model_category(model: str) -> str:
     return model_category_map().get(_gateway_model_id(model), CATEGORY_TEXT)
 
 
-def resolve_model_category(model: str, explicit_category: Optional[str]) -> Tuple[str, str]:
+def resolve_model_category(model: str, explicit_category: str | None) -> tuple[str, str]:
     if explicit_category:
         if explicit_category not in CATEGORIES:
             raise ValueError(f"category must be one of: {', '.join(CATEGORIES)}")
@@ -84,10 +85,10 @@ def resolve_model_category(model: str, explicit_category: Optional[str]) -> Tupl
     return category, source
 
 
-def _parse_call_prefix(argv: Sequence[str]) -> Tuple[Optional[str], Optional[str], List[str]]:
-    model: Optional[str] = None
-    category: Optional[str] = None
-    remaining: List[str] = []
+def _parse_call_prefix(argv: Sequence[str]) -> tuple[str | None, str | None, list[str]]:
+    model: str | None = None
+    category: str | None = None
+    remaining: list[str] = []
     index = 0
 
     while index < len(argv):
@@ -112,11 +113,11 @@ def _parse_call_prefix(argv: Sequence[str]) -> Tuple[Optional[str], Optional[str
     return model, category, remaining
 
 
-def _json_object(value: Optional[str], name: str) -> Dict[str, Any]:
+def _json_object(value: str | None, name: str) -> dict[str, Any]:
     return parse_json_object_parameter(value, name)
 
 
-def _options_from_args(args: argparse.Namespace, *, include_media_download: bool = False) -> Dict[str, Any]:
+def _options_from_args(args: argparse.Namespace, *, include_media_download: bool = False) -> dict[str, Any]:
     options = _json_object(getattr(args, "options", None), "options")
     for key in ("api_key", "base_url", "timeout"):
         value = getattr(args, key, None)
@@ -129,7 +130,7 @@ def _options_from_args(args: argparse.Namespace, *, include_media_download: bool
     return options
 
 
-def _payload_from_args(args: argparse.Namespace) -> Dict[str, Any]:
+def _payload_from_args(args: argparse.Namespace) -> dict[str, Any]:
     return _json_object(getattr(args, "payload", None), "payload")
 
 
@@ -137,7 +138,7 @@ def _read_text_file(path: str) -> str:
     return Path(path).expanduser().read_text(encoding="utf-8")
 
 
-def _stdin_text() -> Optional[str]:
+def _stdin_text() -> str | None:
     if sys.stdin.isatty():
         return None
     value = sys.stdin.read()
@@ -219,7 +220,7 @@ def _add_common_gateway_args(parser: argparse.ArgumentParser, *, default_timeout
     )
 
 
-def _add_sampling_args(parser: argparse.ArgumentParser, defaults: Dict[str, Any]) -> None:
+def _add_sampling_args(parser: argparse.ArgumentParser, defaults: dict[str, Any]) -> None:
     parser.add_argument("--system-prompt", default=None, help="Optional system prompt.")
     parser.add_argument(
         "--system-prompt-file",
@@ -246,7 +247,7 @@ def _add_sampling_args(parser: argparse.ArgumentParser, defaults: Dict[str, Any]
     )
 
 
-def _system_prompt(args: argparse.Namespace) -> Optional[str]:
+def _system_prompt(args: argparse.Namespace) -> str | None:
     if args.system_prompt and args.system_prompt_file:
         raise ValueError("provide only one of --system-prompt or --system-prompt-file")
     if args.system_prompt_file:
@@ -257,7 +258,7 @@ def _system_prompt(args: argparse.Namespace) -> Optional[str]:
 def _build_text_parser(
     model: str,
     category_source: str,
-    defaults: Dict[str, Any],
+    defaults: dict[str, Any],
 ) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog=f"just-prompt call {model}",
@@ -278,7 +279,7 @@ def _build_text_parser(
 def _build_speech_parser(
     model: str,
     category_source: str,
-    defaults: Dict[str, Any],
+    defaults: dict[str, Any],
 ) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog=f"just-prompt call {model}",
@@ -334,7 +335,7 @@ def _build_speech_parser(
 def _build_image_parser(
     model: str,
     category_source: str,
-    defaults: Dict[str, Any],
+    defaults: dict[str, Any],
 ) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog=f"just-prompt call {model}",
@@ -372,7 +373,7 @@ def _build_image_parser(
 def _build_search_parser(
     model: str,
     category_source: str,
-    defaults: Dict[str, Any],
+    defaults: dict[str, Any],
 ) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog=f"just-prompt call {model}",
@@ -404,7 +405,7 @@ def _build_adapter_parser(
     *,
     model: str,
     category_source: str,
-    defaults: Dict[str, Any],
+    defaults: dict[str, Any],
 ) -> argparse.ArgumentParser:
     if category == CATEGORY_TEXT:
         return _build_text_parser(model, category_source, defaults)
@@ -560,8 +561,8 @@ Known model category mappings:
 def run_call(
     argv: Sequence[str],
     *,
-    stdout: Optional[TextIO] = None,
-    stderr: Optional[TextIO] = None,
+    stdout: TextIO | None = None,
+    stderr: TextIO | None = None,
 ) -> int:
     stdout = stdout or sys.stdout
     stderr = stderr or sys.stderr
@@ -670,10 +671,10 @@ def run_server(argv: Sequence[str], *, prog: str = "just-prompt") -> int:
 
 
 def run(
-    argv: Optional[Sequence[str]] = None,
+    argv: Sequence[str] | None = None,
     *,
-    stdout: Optional[TextIO] = None,
-    stderr: Optional[TextIO] = None,
+    stdout: TextIO | None = None,
+    stderr: TextIO | None = None,
 ) -> int:
     load_dotenv()
     apply_config_env_defaults()

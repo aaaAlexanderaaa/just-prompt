@@ -2,14 +2,14 @@
 List providers functionality for just-prompt.
 """
 
-from typing import List, Dict
 import logging
+
 from ..atoms.shared.data_types import ModelProviders
 
 logger = logging.getLogger(__name__)
 
 
-def list_providers() -> List[Dict[str, str]]:
+def list_providers() -> list[dict[str, str]]:
     """
     List all available providers with their full and short names.
     
@@ -24,5 +24,5 @@ def list_providers() -> List[Dict[str, str]]:
             "short_name": provider.short_name,
             "aliases": ", ".join(provider.aliases)
         })
-    
+
     return providers

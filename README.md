@@ -568,6 +568,12 @@ default. Set `file_access_root` in `just-prompt.config.json` to allow reads and
 writes inside a different directory. `JUST_PROMPT_FILE_ROOT` and
 `--file-access-root` are runtime overrides.
 
+When a model name is not found in a direct provider's model list, the legacy
+multi-model tools (`prompt`, `prompt_from_file`, `ceo_and_board`) will use the
+configured correction model to fuzzy-match it. This makes a live LLM call on
+your behalf. Set `JUST_PROMPT_DISABLE_MODEL_CORRECTION=1` to disable it and use
+model names as-is.
+
 ## Claude Code Installation
 > In all these examples, replace the directory with the path to the just-prompt directory.
 
@@ -668,8 +674,27 @@ claude mcp remove just-prompt
 
 ## Running Tests
 
+The unit test suite runs without any API keys:
+
 ```bash
 uv run pytest
+```
+
+Tests that hit real provider APIs (OpenAI, Anthropic, Gemini, Groq, DeepSeek,
+Ollama, or a configured gateway) are marked `live` and are skipped by default.
+To include them, set the relevant API keys and run:
+
+```bash
+uv run pytest -m live
+# or run everything:
+uv run pytest -m "live or not live"
+```
+
+## Linting
+
+```bash
+uv run ruff check src/ scripts/
+uv run ruff check --fix src/ scripts/   # apply safe auto-fixes
 ```
 
 ## Codebase Structure
@@ -682,9 +707,10 @@ uv run pytest
 │   ├── openai-reasoning-effort.md
 │   └── pocket-pick-mcp-server-example.xml
 ├── example_outputs/           # Example outputs from different models
-├── list_models.py             # Script to list available LLM models
 ├── prompts/                   # Example prompt files
 ├── pyproject.toml             # Python project configuration
+├── scripts/                   # Standalone utility scripts
+│   └── list_models.py         # Script to list available LLM models
 ├── specs/                     # Project specifications
 │   ├── init-just-prompt.md
 │   ├── new-tool-llm-as-a-ceo.md

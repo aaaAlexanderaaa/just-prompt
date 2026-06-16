@@ -1,14 +1,21 @@
 """
 Tests for Ollama provider.
+
+These tests hit a live Ollama daemon and are marked ``live``. Run the default
+suite with ``-m "not live"`` to skip them.
 """
 
+
 import pytest
-import os
 from dotenv import load_dotenv
+
 from just_prompt.atoms.llm_providers import ollama
 
 # Load environment variables
 load_dotenv()
+
+# All tests in this module exercise a real Ollama daemon.
+pytestmark = pytest.mark.live
 
 
 def _require_ollama_models():

@@ -2,10 +2,10 @@
 Utility functions for just-prompt.
 """
 
-from typing import Tuple, List, Optional
-import os
-from dotenv import load_dotenv
 import logging
+import os
+
+from dotenv import load_dotenv
 
 # Set up logging
 logging.basicConfig(
@@ -21,7 +21,7 @@ load_dotenv()
 DEFAULT_MODEL = "gateway:glm-4.7"
 
 
-def split_provider_and_model(model_string: str) -> Tuple[str, str]:
+def split_provider_and_model(model_string: str) -> tuple[str, str]:
     """
     Split a model string into provider and model name.
     
@@ -38,7 +38,7 @@ def split_provider_and_model(model_string: str) -> Tuple[str, str]:
     parts = model_string.split(":", 1)
     if len(parts) != 2:
         raise ValueError(f"Invalid model string format: {model_string}. Expected format: 'provider:model'")
-    
+
     provider, model = parts
     return provider, model
 
@@ -54,11 +54,11 @@ def get_provider_from_prefix(prefix: str) -> str:
         Full provider name
     """
     from .data_types import ModelProviders
-    
+
     provider = ModelProviders.from_name(prefix)
     if provider is None:
         raise ValueError(f"Unknown provider prefix: {prefix}")
-    
+
     return provider.full_name
 
 
@@ -77,7 +77,7 @@ def get_models_prefixed_by_provider(provider_prefix: str, model_name: str) -> st
     return f"{provider}:{model_name}"
 
 
-def get_api_key(provider: str) -> Optional[str]:
+def get_api_key(provider: str) -> str | None:
     """
     Get the API key for a provider from environment variables.
     
@@ -96,11 +96,11 @@ def get_api_key(provider: str) -> Optional[str]:
         "groq": "GROQ_API_KEY",
         "deepseek": "DEEPSEEK_API_KEY"
     }
-    
+
     env_var = key_mapping.get(provider)
     if not env_var:
         return None
-    
+
     value = os.environ.get(env_var)
     if value:
         return value

@@ -2,23 +2,24 @@
 Prompt from file to file functionality for just-prompt.
 """
 
-from typing import Any, Dict, List, Optional
 import logging
 import os
 from pathlib import Path
-from .prompt_from_file import prompt_from_file
-from ..atoms.shared.utils import DEFAULT_MODEL
+from typing import Any
+
 from ..atoms.shared.file_access import resolve_checked_path
+from ..atoms.shared.utils import DEFAULT_MODEL
+from .prompt_from_file import prompt_from_file
 
 logger = logging.getLogger(__name__)
 
 
 def prompt_from_file_to_file(
     abs_file_path: str,
-    models_prefixed_by_provider: List[str] = None,
+    models_prefixed_by_provider: list[str] = None,
     abs_output_dir: str = ".",
-    error_strategy: Optional[Dict[str, Any]] = None,
-) -> List[str]:
+    error_strategy: dict[str, Any] | None = None,
+) -> list[str]:
     """
     Read text from a file, send it as prompt to multiple models, and save responses to files.
 
@@ -58,7 +59,7 @@ def prompt_from_file_to_file(
         default_models = os.environ.get("DEFAULT_MODELS", DEFAULT_MODEL)
         models_used = [model.strip() for model in default_models.split(",")]
 
-    for i, (model_string, response) in enumerate(zip(models_used, responses)):
+    for _i, (model_string, response) in enumerate(zip(models_used, responses, strict=False)):
         # Sanitize model string for filename (replace colons with underscores)
         safe_model_name = model_string.replace(":", "_")
 

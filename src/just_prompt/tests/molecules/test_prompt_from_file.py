@@ -2,10 +2,12 @@
 Tests for prompt_from_file functionality.
 """
 
-import pytest
 import os
 import tempfile
+
+import pytest
 from dotenv import load_dotenv
+
 from just_prompt.molecules.prompt_from_file import prompt_from_file
 
 # Load environment variables
@@ -18,6 +20,7 @@ def test_nonexistent_file():
         prompt_from_file("/non/existent/file.txt", ["o:gpt-4o-mini"])
 
 
+@pytest.mark.live
 def test_file_read(monkeypatch):
     """Test that the file is read correctly and processes with real API call."""
     if not os.environ.get("OPENAI_API_KEY"):
@@ -28,11 +31,11 @@ def test_file_read(monkeypatch):
         temp.write("What is the capital of France?")
         temp_path = temp.name
     monkeypatch.setenv("JUST_PROMPT_FILE_ROOT", os.path.dirname(temp_path))
-    
+
     try:
         # Make real API call
         response = prompt_from_file(temp_path, ["o:gpt-4o-mini"])
-        
+
         # Assertions
         assert isinstance(response, list)
         assert len(response) == 1

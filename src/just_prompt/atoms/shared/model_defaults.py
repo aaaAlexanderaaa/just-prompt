@@ -5,8 +5,7 @@ Shared just-prompt application configuration.
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional
-
+from typing import Any
 
 CONFIG_FILE_ENV = "JUST_PROMPT_CONFIG_FILE"
 CONFIG_JSON_ENV = "JUST_PROMPT_CONFIG"
@@ -25,7 +24,7 @@ def normalize_model_id(model: str) -> str:
     return MODEL_ID_ALIASES.get(model, model)
 
 
-def _merge_dicts(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+def _merge_dicts(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     merged = dict(base)
     for key, value in override.items():
         if (
@@ -38,7 +37,7 @@ def _merge_dicts(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, An
     return merged
 
 
-def _read_json_file(path: Path) -> Dict[str, Any]:
+def _read_json_file(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
     data = json.loads(path.read_text(encoding="utf-8"))
@@ -47,12 +46,12 @@ def _read_json_file(path: Path) -> Dict[str, Any]:
     return data
 
 
-def load_app_config() -> Dict[str, Any]:
+def load_app_config() -> dict[str, Any]:
     """
     Load non-secret app config from the project file, optional file override,
     and env JSON.
     """
-    config: Dict[str, Any] = {}
+    config: dict[str, Any] = {}
 
     default_path = Path(CONFIG_FILE_NAME)
     if default_path.exists():
@@ -75,7 +74,7 @@ def load_app_config() -> Dict[str, Any]:
     return config
 
 
-def load_model_defaults_config() -> Dict[str, Any]:
+def load_model_defaults_config() -> dict[str, Any]:
     """
     Return the model_defaults section from shared app config.
     """
@@ -87,13 +86,13 @@ def load_model_defaults_config() -> Dict[str, Any]:
     return {}
 
 
-def app_env_defaults(config: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
+def app_env_defaults(config: dict[str, Any] | None = None) -> dict[str, str]:
     """
     Return environment variable defaults derived from non-secret app config.
     """
     config = load_app_config() if config is None else config
     gateway = config.get("gateway")
-    env: Dict[str, str] = {}
+    env: dict[str, str] = {}
     if isinstance(gateway, dict):
         key_map = {
             "base_url": "MODEL_GATEWAY_BASE_URL",
@@ -111,7 +110,7 @@ def app_env_defaults(config: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
     return env
 
 
-def apply_config_env_defaults(config: Optional[Dict[str, Any]] = None) -> None:
+def apply_config_env_defaults(config: dict[str, Any] | None = None) -> None:
     """
     Apply non-secret config values to env only when the env var is absent.
     """
@@ -120,7 +119,7 @@ def apply_config_env_defaults(config: Optional[Dict[str, Any]] = None) -> None:
             os.environ[key] = value
 
 
-def configured_model_categories(config: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
+def configured_model_categories(config: dict[str, Any] | None = None) -> dict[str, str]:
     """
     Return user-configured model -> category mappings.
     """
@@ -135,7 +134,7 @@ def configured_model_categories(config: Optional[Dict[str, Any]] = None) -> Dict
     }
 
 
-def _named_section(config: Dict[str, Any], name: str) -> Dict[str, Any]:
+def _named_section(config: dict[str, Any], name: str) -> dict[str, Any]:
     value = config.get(name)
     return value if isinstance(value, dict) else {}
 
@@ -144,8 +143,8 @@ def defaults_for_model(
     model: str,
     category: str,
     *,
-    config: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
+    config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """
     Return merged category and model defaults.
     """
@@ -154,7 +153,7 @@ def defaults_for_model(
     models = _named_section(config, "models")
     normalized_model = normalize_model_id(model)
 
-    defaults: Dict[str, Any] = {}
+    defaults: dict[str, Any] = {}
     category_defaults = categories.get(category)
     if isinstance(category_defaults, dict):
         defaults = _merge_dicts(defaults, category_defaults)

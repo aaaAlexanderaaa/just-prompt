@@ -23,7 +23,33 @@ test = [
     "pytest==8.3.5",
     "pytest-asyncio==0.25.3",
 ]
+dev = [
+    "ruff==0.9.10",
+]
 
 [build-system]
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+testpaths = ["src/just_prompt/tests"]
+addopts = ["-m", "not live"]
+markers = [
+    "live: tests that hit real provider APIs (deselect with -m 'not live')",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = [".venv", "build", "dist"]
+
+[tool.ruff.lint]
+# Start with a safe, conservative rule set. Unused imports (F401) and unused
+# variables (F841) are auto-fixed; the rest are reported for manual review.
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = [
+    "E501",  # line length handled by formatter; we don't enforce hard wrap
+    "B008",  # function-call defaults (used for client singletons)
+    "E402",  # module imports after load_dotenv() — intentional provider pattern
+    "W293",  # false-positives on docstring-internal blank lines; formatter handles real cases
+]

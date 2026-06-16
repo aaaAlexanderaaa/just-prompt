@@ -10,7 +10,7 @@ import json
 import logging
 import os
 from collections.abc import Iterable
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 from urllib import error, request
 
 from dotenv import load_dotenv
@@ -36,7 +36,7 @@ PROTOCOL_BASE_URL_ENV_NAMES = (
     "OPENAI_COMPATIBLE_PROTOCOL_BASE_URL",
 )
 
-PROTOCOL_ENDPOINTS: Dict[str, Tuple[str, str, Dict[str, str]]] = {
+PROTOCOL_ENDPOINTS: dict[str, tuple[str, str, dict[str, str]]] = {
     "openai:chat-completions": ("POST", "/v1/chat/completions", {}),
     "openai:image-generations": ("POST", "/v1/images/generations", {}),
     "openai:audio-speech": ("POST", "/v1/audio/speech", {}),
@@ -61,7 +61,7 @@ PROTOCOL_ENDPOINTS: Dict[str, Tuple[str, str, Dict[str, str]]] = {
     "unifuncs:web-reader": ("POST", "/unifuncs/web-reader", {}),
 }
 
-PROTOCOL_MODEL_LOCATIONS: Dict[str, str] = {
+PROTOCOL_MODEL_LOCATIONS: dict[str, str] = {
     "openai:chat-completions": "body",
     "openai:image-generations": "body",
     "openai:audio-speech": "body",
@@ -115,7 +115,7 @@ TASK_ENDPOINTS = {
 }
 
 
-def _model_id(model_record: Dict[str, Any]) -> Optional[str]:
+def _model_id(model_record: dict[str, Any]) -> str | None:
     for key in ("id", "name", "model", "model_id"):
         value = model_record.get(key)
         if value:
@@ -124,7 +124,7 @@ def _model_id(model_record: Dict[str, Any]) -> Optional[str]:
     return None
 
 
-def _protocol_id(protocol_record: Any) -> Optional[str]:
+def _protocol_id(protocol_record: Any) -> str | None:
     if isinstance(protocol_record, str):
         return protocol_record
     if isinstance(protocol_record, dict):
@@ -139,12 +139,12 @@ def _looks_like_protocol_id(value: Any) -> bool:
     return isinstance(value, str) and ":" in value and value.strip() != ""
 
 
-def _append_protocol(protocols: List[str], protocol_id: Optional[str]) -> None:
+def _append_protocol(protocols: list[str], protocol_id: str | None) -> None:
     if protocol_id and protocol_id not in protocols:
         protocols.append(protocol_id)
 
 
-def _normalize_protocol_records(raw_protocols: Any) -> List[str]:
+def _normalize_protocol_records(raw_protocols: Any) -> list[str]:
     if raw_protocols is None:
         return []
     if isinstance(raw_protocols, str):
@@ -154,7 +154,7 @@ def _normalize_protocol_records(raw_protocols: Any) -> List[str]:
         if protocol_id:
             return [protocol_id]
 
-        protocols: List[str] = []
+        protocols: list[str] = []
         for key, value in raw_protocols.items():
             if _looks_like_protocol_id(key) and value not in (False, None):
                 _append_protocol(protocols, str(key))
@@ -171,7 +171,7 @@ def _normalize_protocol_records(raw_protocols: Any) -> List[str]:
     return protocols
 
 
-def _normalize_endpoint_type_records(raw_endpoint_types: Any) -> List[str]:
+def _normalize_endpoint_type_records(raw_endpoint_types: Any) -> list[str]:
     if raw_endpoint_types is None:
         return []
     if isinstance(raw_endpoint_types, str):
@@ -187,7 +187,7 @@ def _normalize_endpoint_type_records(raw_endpoint_types: Any) -> List[str]:
     return [str(item).strip().lower() for item in raw_endpoint_types if str(item).strip()]
 
 
-def _inferred_protocols_from_record(model_record: Dict[str, Any]) -> List[str]:
+def _inferred_protocols_from_record(model_record: dict[str, Any]) -> list[str]:
     model_id = (_model_id(model_record) or "").lower()
     endpoint_types = _normalize_endpoint_type_records(
         model_record.get("supported_endpoint_types")
@@ -213,7 +213,7 @@ def _inferred_protocols_from_record(model_record: Dict[str, Any]) -> List[str]:
     return []
 
 
-def supported_protocols_from_record(model_record: Dict[str, Any]) -> List[str]:
+def supported_protocols_from_record(model_record: dict[str, Any]) -> list[str]:
     """
     Extract supported protocol IDs from a gateway model record.
     """
@@ -229,8 +229,8 @@ def supported_protocols_from_record(model_record: Dict[str, Any]) -> List[str]:
 
 
 def find_model_record(
-    model: str, records: Optional[List[Dict[str, Any]]] = None
-) -> Optional[Dict[str, Any]]:
+    model: str, records: list[dict[str, Any]] | None = None
+) -> dict[str, Any] | None:
     """
     Find a model metadata record by ID/name.
     """
@@ -244,8 +244,8 @@ def find_model_record(
 
 
 def supported_protocols_for_model(
-    model: str, records: Optional[List[Dict[str, Any]]] = None
-) -> List[str]:
+    model: str, records: list[dict[str, Any]] | None = None
+) -> list[str]:
     """
     Return the gateway-advertised protocols for a model when metadata is available.
     """
@@ -254,13 +254,13 @@ def supported_protocols_for_model(
 
 
 def unsupported_model_protocols(
-    records: Optional[List[Dict[str, Any]]] = None
-) -> Dict[str, List[str]]:
+    records: list[dict[str, Any]] | None = None
+) -> dict[str, list[str]]:
     """
     Return gateway-advertised protocols that this client cannot call yet.
     """
     records = records if records is not None else list_model_details()
-    unsupported: Dict[str, List[str]] = {}
+    unsupported: dict[str, list[str]] = {}
     for record in records:
         model_id = _model_id(record)
         if not model_id:
@@ -285,7 +285,7 @@ def _option_bool(value: Any, default: bool) -> bool:
     return bool(value)
 
 
-def _model_list_base_url(configured_base_url: Optional[str] = None) -> str:
+def _model_list_base_url(configured_base_url: str | None = None) -> str:
     if configured_base_url:
         base = configured_base_url.rstrip("/")
         if base.endswith("/v1"):
@@ -294,7 +294,7 @@ def _model_list_base_url(configured_base_url: Optional[str] = None) -> str:
     return chat_base_url()
 
 
-def _protocol_request_base_url(configured_base_url: Optional[str] = None) -> str:
+def _protocol_request_base_url(configured_base_url: str | None = None) -> str:
     if configured_base_url:
         base = configured_base_url.rstrip("/")
         if base.endswith("/v1"):
@@ -305,10 +305,10 @@ def _protocol_request_base_url(configured_base_url: Optional[str] = None) -> str
 
 def _safe_model_details(
     *,
-    api_key: Optional[str] = None,
-    base_url: Optional[str] = None,
+    api_key: str | None = None,
+    base_url: str | None = None,
     timeout: float = 120.0,
-) -> Optional[List[Dict[str, Any]]]:
+) -> list[dict[str, Any]] | None:
     try:
         return list_model_details(api_key=api_key, base_url=base_url, timeout=timeout)
     except Exception as exc:
@@ -320,10 +320,10 @@ def _model_details_for_selection(
     *,
     protocol: str,
     strict_model_protocol: bool,
-    api_key: Optional[str] = None,
-    base_url: Optional[str] = None,
+    api_key: str | None = None,
+    base_url: str | None = None,
     timeout: float = 120.0,
-) -> Optional[List[Dict[str, Any]]]:
+) -> list[dict[str, Any]] | None:
     if protocol == "auto":
         if strict_model_protocol:
             return list_model_details(api_key=api_key, base_url=base_url, timeout=timeout)
@@ -337,8 +337,8 @@ def _model_details_for_selection(
 
 def select_protocol_for_model(
     model: str,
-    preferred_protocol: Optional[str] = None,
-    records: Optional[List[Dict[str, Any]]] = None,
+    preferred_protocol: str | None = None,
+    records: list[dict[str, Any]] | None = None,
     strict_model_protocol: bool = True,
     fetch_records: bool = True,
 ) -> str:
@@ -430,9 +430,9 @@ def select_protocol_for_model(
     return "openai:chat-completions"
 
 
-def _request_options_from(options: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-    request_options: Dict[str, Any] = {}
-    payload_options: Dict[str, Any] = {}
+def _request_options_from(options: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    request_options: dict[str, Any] = {}
+    payload_options: dict[str, Any] = {}
     for key, value in options.items():
         if key in REQUEST_OPTION_KEYS:
             request_options[key] = value
@@ -441,7 +441,7 @@ def _request_options_from(options: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict
     return request_options, payload_options
 
 
-def _apply_prompt_payload(protocol: str, request_payload: Dict[str, Any]) -> None:
+def _apply_prompt_payload(protocol: str, request_payload: dict[str, Any]) -> None:
     prompt_text = request_payload.pop("prompt", None)
     if prompt_text is None:
         return
@@ -476,7 +476,7 @@ def _apply_prompt_payload(protocol: str, request_payload: Dict[str, Any]) -> Non
     request_payload.setdefault("prompt", prompt_text)
 
 
-def _first_env(names: Tuple[str, ...]) -> Optional[str]:
+def _first_env(names: tuple[str, ...]) -> str | None:
     for name in names:
         value = os.environ.get(name)
         if value and value.strip():
@@ -484,7 +484,7 @@ def _first_env(names: Tuple[str, ...]) -> Optional[str]:
     return None
 
 
-def _api_key(explicit: Optional[str] = None, *, required: bool = True) -> Optional[str]:
+def _api_key(explicit: str | None = None, *, required: bool = True) -> str | None:
     key = explicit or _first_env(API_KEY_ENV_NAMES)
     if required and not key:
         raise ValueError(
@@ -493,7 +493,7 @@ def _api_key(explicit: Optional[str] = None, *, required: bool = True) -> Option
     return key
 
 
-def _configured_base_url(env_names: Tuple[str, ...], *, kind: str) -> str:
+def _configured_base_url(env_names: tuple[str, ...], *, kind: str) -> str:
     base_url = _first_env(env_names)
     if not base_url:
         env_text = " or ".join(env_names)
@@ -537,10 +537,10 @@ def gateway_request(
     path: str,
     *,
     method: str = "POST",
-    payload: Optional[Dict[str, Any]] = None,
-    headers: Optional[Dict[str, str]] = None,
-    base_url: Optional[str] = None,
-    api_key: Optional[str] = None,
+    payload: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
+    base_url: str | None = None,
+    api_key: str | None = None,
     timeout: float = 120.0,
     require_api_key: bool = True,
 ) -> Any:
@@ -573,9 +573,9 @@ def gateway_request(
 
 def chat_completion(
     model: str,
-    messages: List[Dict[str, Any]],
-    options: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
+    messages: list[dict[str, Any]],
+    options: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """
     Call an OpenAI-compatible chat completions endpoint.
     """
@@ -644,7 +644,7 @@ def extract_protocol_text(response: Any, protocol: str) -> str:
     return json.dumps(response, ensure_ascii=False)
 
 
-def prompt(text: str, model: str, options: Optional[Dict[str, Any]] = None) -> str:
+def prompt(text: str, model: str, options: dict[str, Any] | None = None) -> str:
     """
     Send a single user prompt to the configured gateway using model metadata.
     """
@@ -694,8 +694,8 @@ def prompt(text: str, model: str, options: Optional[Dict[str, Any]] = None) -> s
 def call_protocol(
     model: str,
     protocol: str,
-    payload: Optional[Dict[str, Any]] = None,
-    options: Optional[Dict[str, Any]] = None,
+    payload: dict[str, Any] | None = None,
+    options: dict[str, Any] | None = None,
 ) -> Any:
     """
     Call one of the documented gateway protocol endpoints.
@@ -749,7 +749,7 @@ def call_protocol(
     )
 
 
-def get_task(protocol: str, task_id: str, options: Optional[Dict[str, Any]] = None) -> Any:
+def get_task(protocol: str, task_id: str, options: dict[str, Any] | None = None) -> Any:
     """
     Poll an async protocol task when the protocol publishes a task endpoint.
     """
@@ -774,10 +774,10 @@ def get_task(protocol: str, task_id: str, options: Optional[Dict[str, Any]] = No
 
 def list_model_details(
     *,
-    api_key: Optional[str] = None,
-    base_url: Optional[str] = None,
+    api_key: str | None = None,
+    base_url: str | None = None,
     timeout: float = 120.0,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Return the gateway's full model records.
     """
@@ -799,7 +799,7 @@ def list_model_details(
     raise ValueError(f"Unexpected models response: {response}")
 
 
-def list_models() -> List[str]:
+def list_models() -> list[str]:
     """
     Return model IDs from the configured gateway.
     """

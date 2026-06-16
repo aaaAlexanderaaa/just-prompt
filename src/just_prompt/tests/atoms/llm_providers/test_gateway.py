@@ -63,6 +63,7 @@ def test_unsupported_model_protocols_allows_tokendance_documented_protocols():
     assert gateway.unsupported_model_protocols(records) == {}
 
 
+@pytest.mark.live
 @pytest.mark.skipif(
     os.environ.get("MODEL_GATEWAY_CONTRACT_TEST") != "1"
     or not os.environ.get("MODEL_GATEWAY_BASE_URL"),

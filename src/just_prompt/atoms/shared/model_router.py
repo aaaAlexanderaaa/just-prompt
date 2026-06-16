@@ -2,13 +2,20 @@
 Model router for dispatching requests to the appropriate provider.
 """
 
-import logging
-from typing import List, Dict, Any, Optional
 import importlib
-from .utils import split_provider_and_model
+import logging
+import os
+
 from .data_types import ModelProviders
+from .utils import split_provider_and_model
 
 logger = logging.getLogger(__name__)
+
+
+def model_correction_disabled() -> bool:
+    """True when the operator has opted out of LLM-based model correction."""
+    value = os.environ.get("JUST_PROMPT_DISABLE_MODEL_CORRECTION", "")
+    return value.strip().lower() not in {"", "0", "false", "no", "off"}
 
 
 class ModelRouter:
@@ -31,10 +38,20 @@ class ModelRouter:
         if provider_name == "gateway":
             return model_name
 
+        # Opt-out: when disabled, skip validation/correction entirely and use
+        # the model name as given. This avoids a surprise live LLM round-trip.
+        if model_correction_disabled():
+            logger.debug(
+                "Model correction disabled; using '%s' as-is for %s",
+                model_name,
+                provider_name,
+            )
+            return model_name
+
         # Early return for our thinking token models to bypass validation
         thinking_models = [
             "claude-3-7-sonnet-20250219",
-            "claude-opus-4-20250514", 
+            "claude-opus-4-20250514",
             "claude-sonnet-4-20250514",
             "gemini-2.5-flash-preview-04-17"
         ]
@@ -54,10 +71,17 @@ class ModelRouter:
                 return model_name
 
             # Model needs correction - use the default correction model
-            import os
-
             correction_model = os.environ.get(
                 "CORRECTION_MODEL", "anthropic:claude-3-7-sonnet-20250219"
+            )
+
+            logger.warning(
+                "Model '%s' not found for provider '%s'; using correction model '%s' "
+                "to resolve a close match. Set JUST_PROMPT_DISABLE_MODEL_CORRECTION=1 "
+                "to disable this.",
+                model_name,
+                provider_name,
+                correction_model,
             )
 
             # Use magic model correction
@@ -66,8 +90,11 @@ class ModelRouter:
             )
 
             if corrected_model != model_name:
-                logger.info(
-                    f"Corrected model name from '{model_name}' to '{corrected_model}' for provider '{provider_name}'"
+                logger.warning(
+                    "Corrected model name from '%s' to '%s' for provider '%s'",
+                    model_name,
+                    corrected_model,
+                    provider_name,
                 )
                 return corrected_model
 
@@ -108,13 +135,13 @@ class ModelRouter:
             return provider_module.prompt(text, validated_model)
         except ImportError as e:
             logger.error(f"Failed to import provider module: {e}")
-            raise ValueError(f"Provider not available: {provider.full_name}")
+            raise ValueError(f"Provider not available: {provider.full_name}") from e
         except Exception as e:
             logger.error(f"Error routing prompt to {provider.full_name}: {e}")
             raise
 
     @staticmethod
-    def route_list_models(provider_name: str) -> List[str]:
+    def route_list_models(provider_name: str) -> list[str]:
         """
         Route a list_models request to the appropriate provider.
 
@@ -138,7 +165,7 @@ class ModelRouter:
             return provider_module.list_models()
         except ImportError as e:
             logger.error(f"Failed to import provider module: {e}")
-            raise ValueError(f"Provider not available: {provider.full_name}")
+            raise ValueError(f"Provider not available: {provider.full_name}") from e
         except Exception as e:
             logger.error(f"Error listing models for {provider.full_name}: {e}")
             raise

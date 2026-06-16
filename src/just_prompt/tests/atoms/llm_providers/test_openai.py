@@ -1,13 +1,20 @@
 """
 Tests for OpenAI provider.
+
+These tests hit the live OpenAI API and are marked ``live``. Run the default
+suite with ``-m "not live"`` to skip them.
 """
 
-import pytest
 import os
+
+import pytest
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
+
+# All tests in this module exercise the real OpenAI API.
+pytestmark = pytest.mark.live
 
 # Skip tests if API key not available
 if not os.environ.get("OPENAI_API_KEY"):
@@ -20,12 +27,12 @@ from just_prompt.atoms.llm_providers import openai
 def test_list_models():
     """Test listing OpenAI models."""
     models = openai.list_models()
-    
+
     # Assertions
     assert isinstance(models, list)
     assert len(models) > 0
     assert all(isinstance(model, str) for model in models)
-    
+
     # Check for at least one expected model
     gpt_models = [model for model in models if "gpt" in model.lower()]
     assert len(gpt_models) > 0, "No GPT models found"

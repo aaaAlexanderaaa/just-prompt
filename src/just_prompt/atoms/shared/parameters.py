@@ -3,10 +3,10 @@ Helpers for coercing MCP arguments into the shapes the server expects.
 """
 
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
-def parse_json_array_parameter(value: Any, name: str) -> Optional[List[str]]:
+def parse_json_array_parameter(value: Any, name: str) -> list[str] | None:
     """
     Accept a real JSON array or a stringified JSON array from MCP clients.
     """
@@ -31,7 +31,7 @@ def parse_json_array_parameter(value: Any, name: str) -> Optional[List[str]]:
     return value
 
 
-def parse_json_object_parameter(value: Any, name: str) -> Dict[str, Any]:
+def parse_json_object_parameter(value: Any, name: str) -> dict[str, Any]:
     """
     Accept a real JSON object or a stringified JSON object from MCP clients.
     """

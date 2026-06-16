@@ -8,6 +8,7 @@ def list_openai_models():
 
 def list_groq_models():
     import os
+
     from groq import Groq
 
     client = Groq(
@@ -20,8 +21,9 @@ def list_groq_models():
 
 
 def list_anthropic_models():
-    import anthropic
     import os
+
+    import anthropic
     from dotenv import load_dotenv
 
     load_dotenv()
@@ -35,8 +37,9 @@ def list_anthropic_models():
 
 def list_gemini_models():
     import os
-    from google import genai
+
     from dotenv import load_dotenv
+    from google import genai
 
     load_dotenv()
 
@@ -57,6 +60,7 @@ def list_gemini_models():
 
 def list_deepseek_models():
     import os
+
     from openai import OpenAI
 
     # for backward compatibility, you can still use `https://api.deepseek.com/v1` as `base_url`.

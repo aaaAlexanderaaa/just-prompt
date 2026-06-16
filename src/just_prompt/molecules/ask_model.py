@@ -2,7 +2,7 @@
 Single-model Model-as-Tool helper.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 from ..atoms.llm_providers import gateway
 from ..atoms.shared.data_types import ModelProviders
@@ -17,7 +17,7 @@ def _known_provider_model(model: str) -> bool:
     return ModelProviders.from_name(prefix) is not None
 
 
-def ask_model(model: str, prompt: str, options: Optional[Dict[str, Any]] = None) -> str:
+def ask_model(model: str, prompt: str, options: dict[str, Any] | None = None) -> str:
     """
     Ask exactly one model and return the text result.
 
@@ -37,8 +37,8 @@ def ask_model(model: str, prompt: str, options: Optional[Dict[str, Any]] = None)
 def call_model_protocol(
     model: str,
     protocol: str,
-    payload: Optional[Dict[str, Any]] = None,
-    options: Optional[Dict[str, Any]] = None,
+    payload: dict[str, Any] | None = None,
+    options: dict[str, Any] | None = None,
 ) -> Any:
     """
     Call a documented gateway protocol endpoint for any compatible model.
@@ -46,7 +46,7 @@ def call_model_protocol(
     return gateway.call_protocol(model, protocol, payload=payload, options=options)
 
 
-def get_model_task(protocol: str, task_id: str, options: Optional[Dict[str, Any]] = None) -> Any:
+def get_model_task(protocol: str, task_id: str, options: dict[str, Any] | None = None) -> Any:
     """
     Poll an async model task for protocols that publish task endpoints.
     """

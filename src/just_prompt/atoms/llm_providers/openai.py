@@ -13,12 +13,10 @@ resource, we gracefully fall back to the Chat Completions endpoint so that the
 basic functionality (and our tests) still work.
 """
 
-import os
 import logging
-from typing import List, Optional, Tuple
+import os
 
 from dotenv import load_dotenv
-
 from openai import OpenAI  # type: ignore
 
 # Load environment variables
@@ -27,7 +25,7 @@ load_dotenv()
 # Configure logging
 logger = logging.getLogger(__name__)
 
-client: Optional[OpenAI] = None
+client: OpenAI | None = None
 
 
 def _get_client() -> OpenAI:
@@ -50,7 +48,7 @@ _REASONING_LEVELS = {"low", "medium", "high"}
 
 # Public so that tests can import.
 
-def parse_reasoning_suffix(model: str) -> Tuple[str, str]:
+def parse_reasoning_suffix(model: str) -> tuple[str, str]:
     """Return (base_model, effort_level).
 
     If *model* is something like ``o4-mini:high`` (case‑insensitive) we return
@@ -130,7 +128,7 @@ def _prompt_with_reasoning(text: str, model: str, effort: str) -> str:  # pragma
         return response.choices[0].message.content  # type: ignore[attr-defined]
     except Exception as exc:
         logger.error("Error sending prompt to OpenAI (fallback chat): %s", exc)
-        raise ValueError(f"Failed to get response from OpenAI: {exc}")
+        raise ValueError(f"Failed to get response from OpenAI: {exc}") from exc
 
 
 def prompt(text: str, model: str) -> str:
@@ -156,10 +154,10 @@ def prompt(text: str, model: str) -> str:
         return response.choices[0].message.content  # type: ignore[attr-defined]
     except Exception as exc:
         logger.error("Error sending prompt to OpenAI: %s", exc)
-        raise ValueError(f"Failed to get response from OpenAI: {exc}")
+        raise ValueError(f"Failed to get response from OpenAI: {exc}") from exc
 
 
-def list_models() -> List[str]:
+def list_models() -> list[str]:
     """
     List available OpenAI models.
 

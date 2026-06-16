@@ -1,13 +1,20 @@
 """
 Tests for Groq provider.
+
+These tests hit the live Groq API and are marked ``live``. Run the default
+suite with ``-m "not live"`` to skip them.
 """
 
-import pytest
 import os
+
+import pytest
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
+
+# All tests in this module exercise the real Groq API.
+pytestmark = pytest.mark.live
 
 # Skip tests if API key not available
 if not os.environ.get("GROQ_API_KEY"):

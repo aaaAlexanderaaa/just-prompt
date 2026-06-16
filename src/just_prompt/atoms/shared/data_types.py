@@ -16,12 +16,12 @@ class ModelProviders(Enum):
     DEEPSEEK = ("deepseek", "d")
     OLLAMA = ("ollama", "l")
     GATEWAY = ("gateway", "gw", ("openai-compatible", "oc", "llm"))
-    
+
     def __init__(self, full_name, short_name, aliases=()):
         self.full_name = full_name
         self.short_name = short_name
         self.aliases = aliases
-        
+
     @classmethod
     def from_name(cls, name):
         """

@@ -2,11 +2,11 @@
 Groq provider implementation.
 """
 
-import os
-from typing import List, Optional
 import logging
-from groq import Groq
+import os
+
 from dotenv import load_dotenv
+from groq import Groq
 
 # Load environment variables
 load_dotenv()
@@ -14,7 +14,7 @@ load_dotenv()
 # Configure logging
 logger = logging.getLogger(__name__)
 
-client: Optional[Groq] = None
+client: Groq | None = None
 
 
 def _get_client() -> Groq:
@@ -40,21 +40,21 @@ def prompt(text: str, model: str) -> str:
     """
     try:
         logger.info(f"Sending prompt to Groq model: {model}")
-        
+
         # Create chat completion
         chat_completion = _get_client().chat.completions.create(
             messages=[{"role": "user", "content": text}],
             model=model,
         )
-        
+
         # Extract response content
         return chat_completion.choices[0].message.content
     except Exception as e:
         logger.error(f"Error sending prompt to Groq: {e}")
-        raise ValueError(f"Failed to get response from Groq: {str(e)}")
+        raise ValueError(f"Failed to get response from Groq: {str(e)}") from e
 
 
-def list_models() -> List[str]:
+def list_models() -> list[str]:
     """
     List available Groq models.
     
@@ -64,10 +64,10 @@ def list_models() -> List[str]:
     try:
         logger.info("Listing Groq models")
         response = _get_client().models.list()
-        
+
         # Extract model IDs
         models = [model.id for model in response.data]
-        
+
         return models
     except Exception as e:
         logger.error(f"Error listing Groq models: {e}")

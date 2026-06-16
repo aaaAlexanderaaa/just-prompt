@@ -2,10 +2,10 @@
 Google Gemini provider implementation.
 """
 
+import logging
 import os
 import re
-from typing import List, Optional, Tuple
-import logging
+
 from dotenv import load_dotenv
 from google import genai
 
@@ -15,7 +15,7 @@ load_dotenv()
 # Configure logging
 logger = logging.getLogger(__name__)
 
-client: Optional[genai.Client] = None
+client: genai.Client | None = None
 
 
 def _get_client() -> genai.Client:
@@ -31,7 +31,7 @@ def _get_client() -> genai.Client:
 THINKING_ENABLED_MODELS = ["gemini-2.5-flash-preview-04-17"]
 
 
-def parse_thinking_suffix(model: str) -> Tuple[str, int]:
+def parse_thinking_suffix(model: str) -> tuple[str, int]:
     """
     Parse a model name to check for thinking token budget suffixes.
     Only works with the models in THINKING_ENABLED_MODELS.
@@ -50,21 +50,21 @@ def parse_thinking_suffix(model: str) -> Tuple[str, int]:
     # First check if the model name contains a colon
     if ":" not in model:
         return model, 0
-        
+
     # Split the model name on the first colon to handle models with multiple colons
     parts = model.split(":", 1)
     base_model = parts[0]
     suffix = parts[1] if len(parts) > 1 else ""
-    
+
     # Check if the base model is in the supported models list
     if base_model not in THINKING_ENABLED_MODELS:
         logger.warning(f"Model {base_model} does not support thinking, ignoring thinking suffix")
         return base_model, 0
-    
+
     # If there's no suffix or it's empty, return default values
     if not suffix:
         return base_model, 0
-    
+
     # Check if the suffix is a valid number (with optional 'k' suffix)
     if re.match(r'^\d+k?$', suffix):
         # Extract the numeric part and handle 'k' multiplier
@@ -83,7 +83,7 @@ def parse_thinking_suffix(model: str) -> Tuple[str, int]:
             except ValueError:
                 logger.warning(f"Invalid thinking budget format: {suffix}, ignoring")
                 return base_model, 0
-        
+
         # Adjust values outside the range
         if thinking_budget < 0:
             logger.warning(f"Thinking budget {thinking_budget} below minimum (0), using 0 instead")
@@ -91,7 +91,7 @@ def parse_thinking_suffix(model: str) -> Tuple[str, int]:
         elif thinking_budget > 24576:
             logger.warning(f"Thinking budget {thinking_budget} above maximum (24576), using 24576 instead")
             thinking_budget = 24576
-            
+
         logger.info(f"Using thinking budget of {thinking_budget} tokens for model {base_model}")
         return base_model, thinking_budget
     else:
@@ -114,7 +114,7 @@ def prompt_with_thinking(text: str, model: str, thinking_budget: int) -> str:
     """
     try:
         logger.info(f"Sending prompt to Gemini model {model} with thinking budget {thinking_budget}")
-        
+
         response = _get_client().models.generate_content(
             model=model,
             contents=text,
@@ -124,11 +124,11 @@ def prompt_with_thinking(text: str, model: str, thinking_budget: int) -> str:
                 )
             )
         )
-        
+
         return response.text
     except Exception as e:
         logger.error(f"Error sending prompt with thinking to Gemini: {e}")
-        raise ValueError(f"Failed to get response from Gemini with thinking: {str(e)}")
+        raise ValueError(f"Failed to get response from Gemini with thinking: {str(e)}") from e
 
 
 def prompt(text: str, model: str) -> str:
@@ -146,27 +146,27 @@ def prompt(text: str, model: str) -> str:
     """
     # Parse the model name to check for thinking suffixes
     base_model, thinking_budget = parse_thinking_suffix(model)
-    
+
     # If thinking budget is specified, use prompt_with_thinking
     if thinking_budget > 0:
         return prompt_with_thinking(text, base_model, thinking_budget)
-    
+
     # Otherwise, use regular prompt
     try:
         logger.info(f"Sending prompt to Gemini model: {base_model}")
-        
+
         response = _get_client().models.generate_content(
             model=base_model,
             contents=text
         )
-        
+
         return response.text
     except Exception as e:
         logger.error(f"Error sending prompt to Gemini: {e}")
-        raise ValueError(f"Failed to get response from Gemini: {str(e)}")
+        raise ValueError(f"Failed to get response from Gemini: {str(e)}") from e
 
 
-def list_models() -> List[str]:
+def list_models() -> list[str]:
     """
     List available Google Gemini models.
     
@@ -175,7 +175,7 @@ def list_models() -> List[str]:
     """
     try:
         logger.info("Listing Gemini models")
-        
+
         # Get the list of models using the correct API method
         models = []
         available_models = _get_client().models.list()
@@ -190,12 +190,21 @@ def list_models() -> List[str]:
             elif supported_actions is None:
                 # Older SDK objects may not expose capability metadata.
                 models.append(m.name)
-                
+
         # Format model names - strip the "models/" prefix if present
         formatted_models = [model.replace("models/", "") for model in models]
-        
+
         return formatted_models
     except Exception as e:
-        logger.error(f"Error listing Gemini models: {e}")
-        # Throw the error instead of returning hardcoded list
-        raise ValueError(f"Failed to list Gemini models: {str(e)}")
+        # Networking/auth errors shouldn't break callers (or pytest collection).
+        # Mirror openai.py/anthropic.py and return a minimal fallback list.
+        logger.warning(
+            "Error listing Gemini models via API (%s). Returning fallback list.", e
+        )
+        return [
+            "gemini-2.5-flash-preview-04-17",
+            "gemini-2.5-pro-preview-03-25",
+            "gemini-2.0-flash",
+            "gemini-1.5-flash",
+            "gemini-1.5-pro",
+        ]

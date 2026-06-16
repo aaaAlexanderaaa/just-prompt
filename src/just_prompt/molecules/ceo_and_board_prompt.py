@@ -2,14 +2,14 @@
 CEO and Board prompt functionality for just-prompt.
 """
 
-from typing import Any, Dict, List, Optional
 import logging
 import os
-from pathlib import Path
-from .prompt_from_file_to_file import prompt_from_file_to_file
-from .prompt import prompt
-from ..atoms.shared.utils import DEFAULT_MODEL
+from typing import Any
+
 from ..atoms.shared.file_access import resolve_checked_path
+from ..atoms.shared.utils import DEFAULT_MODEL
+from .prompt import prompt
+from .prompt_from_file_to_file import prompt_from_file_to_file
 
 logger = logging.getLogger(__name__)
 
@@ -41,10 +41,10 @@ DEFAULT_CEO_DECISION_PROMPT = """
 def ceo_and_board_prompt(
     abs_from_file: str,
     abs_output_dir: str = ".",
-    models_prefixed_by_provider: List[str] = None,
+    models_prefixed_by_provider: list[str] = None,
     ceo_model: str = DEFAULT_CEO_MODEL,
     ceo_decision_prompt: str = DEFAULT_CEO_DECISION_PROMPT,
-    error_strategy: Optional[Dict[str, Any]] = None,
+    error_strategy: dict[str, Any] | None = None,
 ) -> str:
     """
     Read text from a file, send it as prompt to multiple 'board member' models,
@@ -72,11 +72,11 @@ def ceo_and_board_prompt(
     # Get the original prompt from the file
     try:
         checked_input = resolve_checked_path(abs_from_file, must_exist=True)
-        with open(checked_input, 'r', encoding='utf-8') as f:
+        with open(checked_input, encoding='utf-8') as f:
             original_prompt = f.read()
     except Exception as e:
         logger.error(f"Error reading file {abs_from_file}: {e}")
-        raise ValueError(f"Error reading file: {str(e)}")
+        raise ValueError(f"Error reading file: {str(e)}") from e
 
     # Step 1: Get board members' responses
     board_response_files = prompt_from_file_to_file(
@@ -95,9 +95,8 @@ def ceo_and_board_prompt(
     # Step 2: Read in the board responses
     board_responses_text = ""
     for i, file_path in enumerate(board_response_files):
-        model_name = models_used[i].replace(":", "_")
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(file_path, encoding='utf-8') as f:
                 response_content = f.read()
                 board_responses_text += f"""
 <board-response>
@@ -127,8 +126,8 @@ def ceo_and_board_prompt(
             f.write(final_ceo_prompt)
     except Exception as e:
         logger.error(f"Error writing CEO prompt to {ceo_prompt_file}: {e}")
-        raise ValueError(f"Error writing CEO prompt: {str(e)}")
-    
+        raise ValueError(f"Error writing CEO prompt: {str(e)}") from e
+
     # Step 5: Get the CEO decision
     ceo_response = prompt(final_ceo_prompt, [ceo_model], error_strategy=error_strategy)[0]
 
@@ -139,6 +138,6 @@ def ceo_and_board_prompt(
             f.write(ceo_response)
     except Exception as e:
         logger.error(f"Error writing CEO decision to {ceo_output_file}: {e}")
-        raise ValueError(f"Error writing CEO decision: {str(e)}")
+        raise ValueError(f"Error writing CEO decision: {str(e)}") from e
 
     return str(ceo_output_file)

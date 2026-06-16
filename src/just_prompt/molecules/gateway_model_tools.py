@@ -7,7 +7,7 @@ import binascii
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 from urllib import error, request
 
 from ..atoms.llm_providers import gateway
@@ -40,7 +40,7 @@ def _default_output_path(prefix: str, suffix: str) -> Path:
     return configured_file_root() / "generated" / _default_output_filename(prefix, suffix)
 
 
-def _output_path(output_path: Optional[str], prefix: str, suffix: str) -> Path:
+def _output_path(output_path: str | None, prefix: str, suffix: str) -> Path:
     if output_path and output_path.strip():
         raw_path = output_path.strip()
         path = Path(raw_path)
@@ -65,7 +65,7 @@ def _numbered_path(path: Path, index: int) -> Path:
     return path.with_name(f"{path.stem}-{index + 1}{path.suffix}")
 
 
-def _safe_suffix(value: Optional[str], default: str) -> str:
+def _safe_suffix(value: str | None, default: str) -> str:
     normalized = (value or default).strip().lower().lstrip(".")
     suffix_map = {
         "jpg": "jpg",
@@ -80,7 +80,7 @@ def _safe_suffix(value: Optional[str], default: str) -> str:
     return f".{suffix_map.get(normalized, default)}"
 
 
-def _decode_data_string(value: str) -> Optional[bytes]:
+def _decode_data_string(value: str) -> bytes | None:
     stripped = value.strip()
     if not stripped or stripped.startswith(("http://", "https://")):
         return None
@@ -120,7 +120,7 @@ def _download_media_url(url: str, *, timeout: float) -> bytes:
     return data
 
 
-def _find_audio_value(response: Any) -> Optional[str]:
+def _find_audio_value(response: Any) -> str | None:
     if not isinstance(response, dict):
         return None
 
@@ -175,14 +175,14 @@ def _redact_large_media(value: Any) -> Any:
     return value
 
 
-def _media_result_text(result: Dict[str, Any]) -> str:
+def _media_result_text(result: dict[str, Any]) -> str:
     return json.dumps(result, ensure_ascii=False, indent=2)
 
 
 def _summarize_audio_response(
     response: Any,
     *,
-    output_path: Optional[str],
+    output_path: str | None,
     prefix: str,
     audio_format: str,
     media_download_timeout: float,
@@ -235,7 +235,7 @@ def _summarize_audio_response(
     )
 
 
-def _image_records(response: Any) -> List[Dict[str, Any]]:
+def _image_records(response: Any) -> list[dict[str, Any]]:
     if not isinstance(response, dict):
         return []
     data = response.get("data")
@@ -249,12 +249,12 @@ def _image_records(response: Any) -> List[Dict[str, Any]]:
 def _summarize_image_response(
     response: Any,
     *,
-    output_path: Optional[str],
+    output_path: str | None,
     prefix: str,
     output_format: str,
     media_download_timeout: float,
 ) -> str:
-    result: Dict[str, Any] = {}
+    result: dict[str, Any] = {}
     records = _image_records(response)
     if not records:
         result["warning"] = "No image data records were found in the gateway response."
@@ -301,21 +301,21 @@ def _summarize_image_response(
     return _media_result_text(result)
 
 
-def _gateway_call_options(options: Optional[Dict[str, Any]], default_timeout: float) -> Dict[str, Any]:
+def _gateway_call_options(options: dict[str, Any] | None, default_timeout: float) -> dict[str, Any]:
     call_options = dict(options or {})
     call_options.setdefault("timeout", default_timeout)
     call_options["strict_model_protocol"] = False
     return call_options
 
 
-def _merge_payload(base_payload: Dict[str, Any], payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+def _merge_payload(base_payload: dict[str, Any], payload: dict[str, Any] | None) -> dict[str, Any]:
     merged = dict(base_payload)
     if payload:
         merged.update(payload)
     return merged
 
 
-def _defaulted(value: Any, defaults: Dict[str, Any], key: str, fallback: Any) -> Any:
+def _defaulted(value: Any, defaults: dict[str, Any], key: str, fallback: Any) -> Any:
     return value if value is not None else defaults.get(key, fallback)
 
 
@@ -323,20 +323,20 @@ def generate_minimax_tts(
     model: str,
     *,
     text: str,
-    voice_id: Optional[str] = None,
-    output_path: Optional[str] = None,
-    speed: Optional[float] = None,
-    volume: Optional[float] = None,
-    pitch: Optional[int] = None,
-    sample_rate: Optional[int] = None,
-    bitrate: Optional[int] = None,
-    audio_format: Optional[str] = None,
-    channel: Optional[int] = None,
-    language_boost: Optional[str] = None,
-    emotion: Optional[str] = None,
-    subtitle_enable: Optional[bool] = None,
-    payload: Optional[Dict[str, Any]] = None,
-    options: Optional[Dict[str, Any]] = None,
+    voice_id: str | None = None,
+    output_path: str | None = None,
+    speed: float | None = None,
+    volume: float | None = None,
+    pitch: int | None = None,
+    sample_rate: int | None = None,
+    bitrate: int | None = None,
+    audio_format: str | None = None,
+    channel: int | None = None,
+    language_boost: str | None = None,
+    emotion: str | None = None,
+    subtitle_enable: bool | None = None,
+    payload: dict[str, Any] | None = None,
+    options: dict[str, Any] | None = None,
 ) -> str:
     """
     Generate speech through the configured gateway.
@@ -369,7 +369,7 @@ def generate_minimax_tts(
             "stream": False,
         }
     elif protocol == OPENAI_AUDIO_SPEECH_PROTOCOL:
-        request_payload: Dict[str, Any] = {
+        request_payload: dict[str, Any] = {
             "model": model,
             "input": text,
             "voice": voice_id,
@@ -378,7 +378,7 @@ def generate_minimax_tts(
         if speed != 1.0:
             request_payload["speed"] = speed
     else:
-        voice_setting: Dict[str, Any] = {
+        voice_setting: dict[str, Any] = {
             "voice_id": voice_id,
             "speed": speed,
             "vol": volume,
@@ -430,12 +430,12 @@ def ask_gateway_chat_model(
     model: str,
     *,
     prompt: str,
-    system_prompt: Optional[str] = None,
-    temperature: Optional[float] = None,
-    max_tokens: Optional[int] = None,
-    top_p: Optional[float] = None,
-    payload: Optional[Dict[str, Any]] = None,
-    options: Optional[Dict[str, Any]] = None,
+    system_prompt: str | None = None,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+    top_p: float | None = None,
+    payload: dict[str, Any] | None = None,
+    options: dict[str, Any] | None = None,
     default_timeout: float = 300.0,
     defaults_category: str = "text",
 ) -> str:
@@ -452,7 +452,7 @@ def ask_gateway_chat_model(
         messages.append({"role": "system", "content": system_prompt})
     messages.append({"role": "user", "content": prompt})
 
-    request_payload: Dict[str, Any] = {"messages": messages, "stream": False}
+    request_payload: dict[str, Any] = {"messages": messages, "stream": False}
     if temperature is not None:
         request_payload["temperature"] = temperature
     if max_tokens is not None:
@@ -477,16 +477,16 @@ def generate_openai_image(
     model: str,
     *,
     prompt: str,
-    output_path: Optional[str] = None,
-    size: Optional[str] = None,
-    quality: Optional[str] = None,
-    n: Optional[int] = None,
-    background: Optional[str] = None,
-    moderation: Optional[str] = None,
-    output_format: Optional[str] = None,
-    output_compression: Optional[int] = None,
-    payload: Optional[Dict[str, Any]] = None,
-    options: Optional[Dict[str, Any]] = None,
+    output_path: str | None = None,
+    size: str | None = None,
+    quality: str | None = None,
+    n: int | None = None,
+    background: str | None = None,
+    moderation: str | None = None,
+    output_format: str | None = None,
+    output_compression: int | None = None,
+    payload: dict[str, Any] | None = None,
+    options: dict[str, Any] | None = None,
 ) -> str:
     defaults = defaults_for_model(model, "image")
     size = str(_defaulted(size, defaults, "size", "auto"))
@@ -506,7 +506,7 @@ def generate_openai_image(
     options = dict(options or {})
     media_download_timeout = float(options.pop("media_download_timeout", 120.0))
 
-    request_payload: Dict[str, Any] = {
+    request_payload: dict[str, Any] = {
         "prompt": prompt,
         "n": n,
         "size": size,
@@ -545,13 +545,13 @@ def ask_gateway_search_model(
     model: str,
     *,
     query: str,
-    system_prompt: Optional[str] = None,
-    temperature: Optional[float] = None,
-    max_tokens: Optional[int] = None,
-    top_p: Optional[float] = None,
-    search_parameters: Optional[Dict[str, Any]] = None,
-    payload: Optional[Dict[str, Any]] = None,
-    options: Optional[Dict[str, Any]] = None,
+    system_prompt: str | None = None,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+    top_p: float | None = None,
+    search_parameters: dict[str, Any] | None = None,
+    payload: dict[str, Any] | None = None,
+    options: dict[str, Any] | None = None,
     default_timeout: float = 1200.0,
 ) -> str:
     defaults = defaults_for_model(model, "search")
@@ -560,7 +560,7 @@ def ask_gateway_search_model(
     top_p = _defaulted(top_p, defaults, "top_p", None)
     search_parameters = _defaulted(search_parameters, defaults, "search_parameters", None)
 
-    request_payload: Dict[str, Any] = {}
+    request_payload: dict[str, Any] = {}
     if search_parameters:
         request_payload["search_parameters"] = search_parameters
 
@@ -581,13 +581,13 @@ def ask_gateway_search_model(
 def ask_grok_4_20_multi_agent_xhigh(
     *,
     query: str,
-    system_prompt: Optional[str] = None,
-    temperature: Optional[float] = None,
-    max_tokens: Optional[int] = None,
-    top_p: Optional[float] = None,
-    search_parameters: Optional[Dict[str, Any]] = None,
-    payload: Optional[Dict[str, Any]] = None,
-    options: Optional[Dict[str, Any]] = None,
+    system_prompt: str | None = None,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+    top_p: float | None = None,
+    search_parameters: dict[str, Any] | None = None,
+    payload: dict[str, Any] | None = None,
+    options: dict[str, Any] | None = None,
 ) -> str:
     return ask_gateway_search_model(
         GROK_4_20_MULTI_AGENT_XHIGH_MODEL,
