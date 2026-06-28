@@ -380,7 +380,14 @@ Typical result:
 ### `grok_4_20_multi_agent_xhigh`
 
 Calls the long-running, non-streaming search model
-`grok-4.20-multi-agent-xhigh` through OpenAI chat completions.
+`grok-4.20-multi-agent-xhigh` through OpenAI chat completions. This is the
+first-layer deep-research tool — Chinese community on linux.do calls it
+"传奇搜索大王". It is especially strong for real-time X data plus academic
+paper, policy, official report, and market synthesis. Use it before Exa,
+Bocha, or default web search when current external evidence quality matters.
+
+Recommended fallback chain when this model is unreachable or times out:
+`grok_4_20_multi_agent_xhigh` -> Exa -> Bocha -> default web search.
 
 Required:
 
@@ -400,11 +407,45 @@ Defaults:
 - `stream`: `false`
 - gateway timeout: `1200` seconds
 
-Example:
+Best practice: precisely define scope and depth; specify required research
+dimensions, data freshness, and source quality. Force structured output such
+as Executive Summary, Findings with inline citations, Agent Debate Highlights,
+Uncertainties/Gaps, Sources, and Recommendations. Prefer English prompts for
+stronger consistency.
+
+Recommended `system_prompt`:
+
+```
+Prefer primary sources, include concrete publication dates, and separate verified facts from inference.
+```
+
+Recommended deep-research query template (also shipped at
+`prompts/grok_deep_research.txt` for `prompt_from_file` reuse, so other
+projects do not have to re-derive it):
+
+```
+Perform a comprehensive 16-agent Realtime Multi-Agent Deep Research in xhigh mode on [主题]. Leave no stone unturned.
+
+Harper team: be exhaustive with web, X (use advanced operators for latest posts), academic papers, official reports.
+Benjamin: verify all technical/financial/logical claims.
+Lucas: ruthlessly challenge assumptions and explore contrarian scenarios.
+
+Follow strict process: decompose -> parallel research -> multiple rounds of debate -> consensus synthesis.
+
+Deliver a professional-grade report equivalent to a top consulting firm team working for days. Structure: Executive Summary, Detailed Analysis (use tables for comparisons), Counterarguments & Limitations, Actionable Insights, Complete References with links where available.
+```
+
+Output contract: synthesized research text. The response may include
+citations, source names, dates, or caveats depending on gateway output. It
+is not streaming; wait for the full result. Treat timeouts or gateway
+errors as a reason to fall back to the next search provider.
+
+Minimal call:
 
 ```json
 {
-  "query": "Find recent privacy-minded local AI tooling for home lab operators. Give three concise bullets with dates."
+  "query": "Find recent privacy-minded local AI tooling for home lab operators. Give three concise bullets with dates.",
+  "system_prompt": "Prefer primary sources, include concrete publication dates, and separate verified facts from inference."
 }
 ```
 
