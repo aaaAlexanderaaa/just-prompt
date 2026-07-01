@@ -220,14 +220,34 @@ class GptImage2Schema(BaseModel):
 
 
 class GrokSearchSchema(BaseModel):
-    query: str = Field(..., description="Search/research query")
-    system_prompt: Optional[str] = Field(None, description="Optional system prompt")
-    temperature: Optional[float] = Field(None, description="Sampling temperature")
-    max_tokens: Optional[int] = Field(None, description="Maximum output tokens")
-    top_p: Optional[float] = Field(None, description="Nucleus sampling value")
-    search_parameters: Optional[Union[Dict[str, Any], str]] = Field(None, description="Optional provider-specific search parameters")
-    payload: Optional[Union[Dict[str, Any], str]] = Field(None, description="Optional raw chat-completions payload overrides")
-    options: Optional[Union[Dict[str, Any], str]] = Field(None, description="Optional gateway call options: api_key, base_url, timeout")
+    query: str = Field(
+        ...,
+        description=(
+            "Search or research question. Prefer concrete entities, dates, and desired evidence.\n"
+            "\n"
+            "For deep research, use this template (fill in [topic]):\n"
+            "Perform a comprehensive 16-agent Realtime Multi-Agent Deep Research in xhigh mode on [topic]. Leave no stone unturned. "
+            "Harper team: be exhaustive with web, X (use advanced operators for latest posts), academic papers, official reports. "
+            "Benjamin: verify all technical/financial/logical claims. "
+            "Lucas: ruthlessly challenge assumptions and explore contrarian scenarios. "
+            "Follow strict process: decompose -> parallel research -> multiple rounds of debate -> consensus synthesis. "
+            "Deliver a professional-grade report equivalent to a top consulting firm team working for days. "
+            "Structure: Executive Summary, Detailed Analysis (use tables for comparisons), Counterarguments & Limitations, Actionable Insights, Complete References with links where available."
+        ),
+    )
+    system_prompt: Optional[str] = Field(
+        None,
+        description="Optional instructions for source quality, synthesis style, or output structure. Example: \"Prefer primary sources, include concrete publication dates, and separate verified facts from inference.\"",
+    )
+    temperature: Optional[float] = Field(None, description="Optional sampling temperature.")
+    max_tokens: Optional[int] = Field(None, description="Optional maximum output tokens.")
+    top_p: Optional[float] = Field(None, description="Optional nucleus sampling value.")
+    search_parameters: Optional[Union[Dict[str, Any], str]] = Field(None, description="Optional provider-specific search parameters passed through to the gateway.")
+    payload: Optional[Union[Dict[str, Any], str]] = Field(None, description="Optional raw chat-completions payload overrides for just-prompt. Use only when the task requires provider-specific fields.")
+    options: Optional[Union[Dict[str, Any], str]] = Field(
+        None,
+        description="Optional gateway call options such as timeout, api_key, or base_url. Default timeout is 1200s; raise via options.timeout only when truly needed. Normal calls should omit this.",
+    )
 
 
 class PromptFromFileSchema(BaseModel):
@@ -356,7 +376,21 @@ async def serve(default_models: str = DEFAULT_MODEL) -> None:
             ),
             Tool(
                 name=JustPromptTools.GROK_4_20_MULTI_AGENT_XHIGH,
-                description="Ask the long-running non-streaming search model grok-4.20-multi-agent-xhigh through OpenAI chat completions.",
+                description=(
+                    "Highest-priority AI research/search synthesis via grok-4.20-multi-agent-xhigh. "
+                    "Use this before lighter search tools when current external evidence quality matters and latency is acceptable.\n"
+                    "\n"
+                    "Non-streaming and slow. Prefer it for difficult research questions, source comparison, recent facts, "
+                    "and high-stakes synthesis. The Chinese community on linux.do calls it \"传奇搜索大王\"; it is especially "
+                    "strong for real-time X data plus academic paper, policy, official report, and market synthesis.\n"
+                    "\n"
+                    "Best practice: precisely define scope and depth; specify required research dimensions, data freshness, "
+                    "and source quality. Force structured output such as Executive Summary, Findings with inline citations, "
+                    "Agent Debate Highlights, Uncertainties/Gaps, Sources, and Recommendations. Prefer English prompts for stronger consistency.\n"
+                    "\n"
+                    "Default gateway timeout is 1200s; override via options.timeout. Treat timeouts or gateway errors as a signal "
+                    "to retry or fall back to a lighter search tool."
+                ),
                 inputSchema=GrokSearchSchema.schema(),
             ),
             Tool(
