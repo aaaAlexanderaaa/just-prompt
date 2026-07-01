@@ -1,9 +1,8 @@
 <purpose>
-    Reusable prompt template for grok-4.20-multi-agent-xhigh deep research through just-prompt.
-    Harvested from the research-workflow grok_research tool config (workflow.toml) so other
-    projects do not have to re-derive it. Chinese community on linux.do calls this model
-    "传奇搜索大王"; it is especially strong for real-time X data plus academic paper, policy,
-    official report, and market synthesis. Treat it as the first-layer deep research tool.
+    Self-contained prompt template for grok-4.20-multi-agent-xhigh deep research, for use
+    with the prompt_from_file tool. Canonical tool description and parameter guidance live
+    in src/just_prompt/server.py (GROK_4_20_MULTI_AGENT_XHIGH Tool + GrokSearchSchema); this
+    file is the file-prompt variant. Update both surfaces in lockstep to avoid drift.
 </purpose>
 
 <usage_notes>
