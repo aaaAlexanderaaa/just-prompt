@@ -104,6 +104,8 @@ DEFAULT_PROTOCOL_PRIORITY = (
 )
 
 REQUEST_OPTION_KEYS = {"api_key", "base_url", "timeout", "strict_model_protocol"}
+TOKEN_LIMIT_KEYS = {"max_tokens", "max_completion_tokens", "max_output_tokens"}
+DEFAULT_MODEL_CALL_TIMEOUT = 900.0
 
 TASK_ENDPOINTS = {
     "happyhorse:video-synthesis": "/alibaba/happyhorse/v1/tasks/{task_id}",
@@ -436,9 +438,18 @@ def _request_options_from(options: dict[str, Any]) -> tuple[dict[str, Any], dict
     for key, value in options.items():
         if key in REQUEST_OPTION_KEYS:
             request_options[key] = value
+        elif key in TOKEN_LIMIT_KEYS and _is_uncapped_token_limit(value):
+            continue
         else:
             payload_options[key] = value
     return request_options, payload_options
+
+
+def _is_uncapped_token_limit(value: Any) -> bool:
+    try:
+        return int(value) <= 0
+    except (TypeError, ValueError):
+        return False
 
 
 def _apply_prompt_payload(protocol: str, request_payload: dict[str, Any]) -> None:
@@ -455,7 +466,7 @@ def _apply_prompt_payload(protocol: str, request_payload: dict[str, Any]) -> Non
     if protocol == "anthropic:messages":
         if "messages" not in request_payload:
             request_payload["messages"] = [{"role": "user", "content": prompt_text}]
-            request_payload.setdefault("max_tokens", 1024)
+            request_payload.setdefault("max_tokens", 65535)
         return
     if protocol == "gemini:generate-content":
         request_payload.setdefault(
@@ -564,11 +575,28 @@ def gateway_request(
     try:
         with request.urlopen(req, timeout=timeout) as response:
             return _decode_response(response.read())
+    except TimeoutError as exc:
+        raise TimeoutError(_timeout_message(path, timeout)) from exc
     except error.HTTPError as exc:
         details = exc.read().decode("utf-8", errors="replace")
         raise ValueError(f"Gateway request failed ({exc.code}) for {path}: {details}") from exc
     except error.URLError as exc:
+        if isinstance(exc.reason, TimeoutError) or (
+            "timed out" in str(exc.reason).lower()
+        ):
+            raise TimeoutError(_timeout_message(path, timeout)) from exc
         raise ValueError(f"Gateway request failed for {path}: {exc.reason}") from exc
+
+
+def _timeout_message(path: str, timeout: float) -> str:
+    return (
+        f"Gateway HTTP request timed out after {timeout:.0f}s while waiting for {path}. "
+        "This is just-prompt's client-side wait timeout; the gateway/model may already "
+        "have received the request and may continue running in the backend. Retry with "
+        "a larger options.timeout such as 900, 1200, or 1800 seconds, or use a faster "
+        "model/shorter prompt. Some MCP clients also enforce their own tool-call timeout; "
+        "if the backend finishes after the tool has timed out, raise the client/tool timeout too."
+    )
 
 
 def chat_completion(
@@ -582,7 +610,7 @@ def chat_completion(
     options = dict(options or {})
     api_key = options.pop("api_key", None)
     base_url = options.pop("base_url", None)
-    timeout = float(options.pop("timeout", 120.0))
+    timeout = float(options.pop("timeout", DEFAULT_MODEL_CALL_TIMEOUT))
 
     payload = {"model": model, "messages": messages}
     payload.update(options)
@@ -654,7 +682,7 @@ def prompt(text: str, model: str, options: dict[str, Any] | None = None) -> str:
     request_options, payload_options = _request_options_from(options)
     api_key = request_options.get("api_key")
     base_url = request_options.get("base_url")
-    timeout = float(request_options.get("timeout", 120.0))
+    timeout = float(request_options.get("timeout", DEFAULT_MODEL_CALL_TIMEOUT))
     strict_model_protocol = _option_bool(
         request_options.get("strict_model_protocol"),
         True,
@@ -681,6 +709,7 @@ def prompt(text: str, model: str, options: dict[str, Any] | None = None) -> str:
         payload.update(payload_override)
 
     call_options = dict(request_options)
+    call_options["timeout"] = timeout
     call_options["strict_model_protocol"] = False
     response = call_protocol(
         model,

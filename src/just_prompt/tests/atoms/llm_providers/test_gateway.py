@@ -206,6 +206,33 @@ def test_call_protocol_embeds_gemini_model_in_path(monkeypatch):
     assert calls["payload"] == {"contents": [{"parts": [{"text": "hello"}]}]}
 
 
+def test_anthropic_prompt_payload_uses_broad_default_max_tokens(monkeypatch):
+    calls = {}
+
+    def fake_request(path, **kwargs):
+        if path == "/models":
+            return {
+                "data": [
+                    {
+                        "id": "claude-compatible",
+                        "supported_protocols": ["anthropic:messages"],
+                    }
+                ]
+            }
+        calls["path"] = path
+        calls["payload"] = kwargs["payload"]
+        return {"content": [{"type": "text", "text": "anthropic response"}]}
+
+    monkeypatch.setattr(gateway, "gateway_request", fake_request)
+
+    response = gateway.prompt("hello", "claude-compatible")
+
+    assert response == "anthropic response"
+    assert calls["path"] == "/v1/messages"
+    assert calls["payload"]["messages"] == [{"role": "user", "content": "hello"}]
+    assert calls["payload"]["max_tokens"] == 65535
+
+
 def test_prompt_auto_selects_protocol_from_model_metadata(monkeypatch):
     calls = []
 
@@ -501,6 +528,76 @@ def test_prompt_uses_custom_gateway_options_for_metadata_and_request(monkeypatch
         },
         "require_api_key": None,
     }
+
+
+def test_prompt_defaults_to_long_model_timeout(monkeypatch):
+    calls = []
+
+    def fake_request(path, **kwargs):
+        calls.append({"path": path, "timeout": kwargs.get("timeout")})
+        if path == "/models":
+            return {
+                "data": [
+                    {
+                        "id": "kimi-k2.7-code",
+                        "supported_protocols": ["openai:chat-completions"],
+                    }
+                ]
+            }
+        return {"choices": [{"message": {"content": "ok"}}]}
+
+    monkeypatch.setattr(gateway, "gateway_request", fake_request)
+
+    assert gateway.prompt("hello", "kimi-k2.7-code") == "ok"
+    assert calls == [
+        {"path": "/models", "timeout": 900.0},
+        {"path": "/v1/chat/completions", "timeout": 900.0},
+    ]
+
+
+def test_prompt_treats_zero_token_limits_as_uncapped(monkeypatch):
+    calls = {}
+
+    def fake_request(path, **kwargs):
+        if path == "/models":
+            return {
+                "data": [
+                    {
+                        "id": "glm-4.7",
+                        "supported_protocols": ["openai:chat-completions"],
+                    }
+                ]
+            }
+        calls["payload"] = kwargs["payload"]
+        return {"choices": [{"message": {"content": "ok"}}]}
+
+    monkeypatch.setattr(gateway, "gateway_request", fake_request)
+
+    gateway.prompt(
+        "hello",
+        "glm-4.7",
+        options={"max_tokens": 0, "max_completion_tokens": "0"},
+    )
+
+    assert calls["payload"] == {
+        "model": "glm-4.7",
+        "messages": [{"role": "user", "content": "hello"}],
+    }
+
+
+def test_gateway_request_timeout_error_is_actionable(monkeypatch):
+    def fake_urlopen(*args, **kwargs):
+        raise TimeoutError("timed out")
+
+    monkeypatch.setattr(gateway.request, "urlopen", fake_urlopen)
+
+    with pytest.raises(TimeoutError) as exc_info:
+        gateway.gateway_request("/v1/chat/completions", payload={}, timeout=7)
+
+    message = str(exc_info.value)
+    assert "timed out after 7s" in message
+    assert "options.timeout" in message
+    assert "gateway/model may already have received the request" in message
 
 
 @pytest.mark.parametrize(

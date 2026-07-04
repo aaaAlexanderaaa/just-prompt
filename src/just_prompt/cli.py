@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 from .atoms.shared.data_types import ModelProviders
 from .atoms.shared.model_defaults import (
     apply_config_env_defaults,
+    configured_gateway_model_categories,
     configured_model_categories,
     defaults_for_model,
     load_app_config,
@@ -51,6 +52,7 @@ def model_category_map() -> dict[str, str]:
         normalize_model_id(model): category
         for model, category in DEFAULT_MODEL_CATEGORY_MAP.items()
     }
+    mapping.update(configured_gateway_model_categories())
     mapping.update(configured_model_categories())
     return mapping
 

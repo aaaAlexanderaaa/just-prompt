@@ -75,3 +75,71 @@ def test_configured_model_categories_normalizes_aliases():
     )
 
     assert categories == {"gpt-image-2": "image"}
+
+
+def test_configured_gateway_model_tools_normalizes_and_skips_disabled():
+    tools = model_defaults.configured_gateway_model_tools(
+        {
+            "gateway_model_tools": [
+                {
+                    "name": "deep_research",
+                    "model": "grok_4_20_multi_agent_xhigh",
+                    "category": "SEARCH",
+                    "description": "  Search deeply.  ",
+                },
+                {
+                    "name": "hidden_tool",
+                    "model": "hidden-model",
+                    "category": "text",
+                    "enabled": False,
+                },
+            ]
+        }
+    )
+
+    assert tools == [
+        {
+            "name": "deep_research",
+            "model": "grok-4.20-multi-agent-xhigh",
+            "category": "search",
+            "description": "Search deeply.",
+        }
+    ]
+
+
+def test_configured_gateway_model_tools_accepts_object_form():
+    tools = model_defaults.configured_gateway_model_tools(
+        {
+            "gateway_model_tools": {
+                "image_tool": {
+                    "model": "gpt-image-2",
+                    "category": "image",
+                }
+            }
+        }
+    )
+
+    assert tools == [
+        {
+            "name": "image_tool",
+            "model": "gpt-image-2",
+            "category": "image",
+            "description": "Call gateway image model gpt-image-2.",
+        }
+    ]
+
+
+def test_configured_gateway_model_categories_from_tool_declarations():
+    categories = model_defaults.configured_gateway_model_categories(
+        {
+            "gateway_model_tools": [
+                {
+                    "name": "search_tool",
+                    "model": "grok-4.20-multi-agent-xhigh",
+                    "category": "search",
+                }
+            ]
+        }
+    )
+
+    assert categories == {"grok-4.20-multi-agent-xhigh": "search"}

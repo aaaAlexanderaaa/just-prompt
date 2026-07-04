@@ -14,6 +14,26 @@ def test_cli_infers_mapped_category_and_defaults_to_text():
     assert cli._gateway_model_id("gpt_image_2") == "gpt-image-2"
 
 
+def test_cli_infers_category_from_declarative_gateway_tool(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "just-prompt.config.json").write_text(
+        """
+        {
+          "gateway_model_tools": [
+            {
+              "name": "deep_research",
+              "model": "custom-search-model",
+              "category": "search"
+            }
+          ]
+        }
+        """,
+        encoding="utf-8",
+    )
+
+    assert cli.infer_model_category("custom-search-model") == "search"
+
+
 def test_cli_model_help_uses_inferred_image_adapter():
     stdout = StringIO()
 
@@ -49,7 +69,7 @@ def test_cli_unknown_model_defaults_to_text_adapter(monkeypatch):
     assert calls["model"] == "unknown-model"
     assert calls["prompt"] == "hello world"
     assert calls["temperature"] == 0.2
-    assert calls["options"]["timeout"] == 300.0
+    assert calls["options"]["timeout"] == 900.0
 
 
 def test_cli_category_override_uses_requested_adapter(monkeypatch):

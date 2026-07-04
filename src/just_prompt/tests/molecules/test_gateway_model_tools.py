@@ -274,6 +274,24 @@ def test_minimax_m3_free_uses_non_streaming_chat(monkeypatch):
     assert calls["options"]["strict_model_protocol"] is False
 
 
+def test_gateway_chat_tool_treats_zero_max_tokens_as_uncapped(monkeypatch):
+    calls = {}
+
+    def fake_call_protocol(model, protocol, payload=None, options=None):
+        calls["payload"] = payload
+        return {"choices": [{"message": {"content": "full answer"}}]}
+
+    monkeypatch.setattr(tools.gateway, "call_protocol", fake_call_protocol)
+
+    response = tools.ask_minimax_m3_free(
+        prompt="Explain the design tradeoffs.",
+        max_tokens=0,
+    )
+
+    assert response == "full answer"
+    assert "max_tokens" not in calls["payload"]
+
+
 def test_gpt_image_2_saves_base64_image(monkeypatch, tmp_path):
     calls = {}
     encoded = base64.b64encode(b"png-bytes").decode("ascii")
@@ -407,3 +425,46 @@ def test_grok_search_uses_long_non_streaming_chat(monkeypatch):
     assert calls["payload"]["stream"] is False
     assert calls["payload"]["search_parameters"] == {"mode": "auto"}
     assert calls["options"]["timeout"] == 1200.0
+
+
+def test_grok_search_applies_configured_deep_research_defaults(monkeypatch):
+    calls = {}
+
+    config = {
+        "model_defaults": {
+            "models": {
+                "grok-4.20-multi-agent-xhigh": {
+                    "system_prompt": "Prefer primary sources and separate verified facts from inference.",
+                    "query_template": "Perform a comprehensive Deep Research on {topic}.",
+                }
+            }
+        }
+    }
+
+    def fake_call_protocol(model, protocol, payload=None, options=None):
+        calls["model"] = model
+        calls["protocol"] = protocol
+        calls["payload"] = payload
+        calls["options"] = options
+        return {"choices": [{"message": {"content": "deep synthesis"}}]}
+
+    monkeypatch.setenv("JUST_PROMPT_CONFIG", json.dumps(config))
+    monkeypatch.setattr(tools.gateway, "call_protocol", fake_call_protocol)
+
+    response = tools.ask_grok_4_20_multi_agent_xhigh(
+        query="privacy-minded local AI tooling",
+    )
+
+    assert response == "deep synthesis"
+    assert calls["model"] == "grok-4.20-multi-agent-xhigh"
+    assert calls["protocol"] == "openai:chat-completions"
+    assert calls["payload"]["messages"] == [
+        {
+            "role": "system",
+            "content": "Prefer primary sources and separate verified facts from inference.",
+        },
+        {
+            "role": "user",
+            "content": "Perform a comprehensive Deep Research on privacy-minded local AI tooling.",
+        },
+    ]

@@ -319,6 +319,28 @@ def _defaulted(value: Any, defaults: dict[str, Any], key: str, fallback: Any) ->
     return value if value is not None else defaults.get(key, fallback)
 
 
+def _token_limit(value: Any) -> int | None:
+    if value is None:
+        return None
+    limit = int(value)
+    return None if limit <= 0 else limit
+
+
+def _apply_query_template(query: str, defaults: dict[str, Any]) -> str:
+    template = defaults.get("query_template")
+    if not isinstance(template, str) or not template.strip():
+        return query
+
+    templated = template
+    for placeholder in ("{query}", "{topic}", "[topic]", "[主题]"):
+        templated = templated.replace(placeholder, query)
+
+    if templated == template:
+        return f"{template.rstrip()}\n\nTopic:\n{query}"
+
+    return templated
+
+
 def generate_minimax_tts(
     model: str,
     *,
@@ -342,6 +364,7 @@ def generate_minimax_tts(
     Generate speech through the configured gateway.
     """
     defaults = defaults_for_model(model, "speech")
+    default_timeout = float(defaults.get("timeout", 300.0))
     voice_id = _defaulted(voice_id, defaults, "voice_id", DEFAULT_VOICE_ID)
     speed = float(_defaulted(speed, defaults, "speed", 1.0))
     volume = float(_defaulted(volume, defaults, "volume", 1.0))
@@ -407,7 +430,7 @@ def generate_minimax_tts(
         model,
         protocol,
         payload=_merge_payload(request_payload, payload),
-        options=_gateway_call_options(options, default_timeout=300.0),
+        options=_gateway_call_options(options, default_timeout=default_timeout),
     )
     return _summarize_audio_response(
         response,
@@ -443,8 +466,9 @@ def ask_gateway_chat_model(
     Ask an OpenAI chat-completions compatible gateway model.
     """
     defaults = defaults_for_model(model, defaults_category)
+    default_timeout = float(defaults.get("timeout", default_timeout))
     temperature = _defaulted(temperature, defaults, "temperature", None)
-    max_tokens = _defaulted(max_tokens, defaults, "max_tokens", None)
+    max_tokens = _token_limit(_defaulted(max_tokens, defaults, "max_tokens", None))
     top_p = _defaulted(top_p, defaults, "top_p", None)
 
     messages = []
@@ -489,6 +513,7 @@ def generate_openai_image(
     options: dict[str, Any] | None = None,
 ) -> str:
     defaults = defaults_for_model(model, "image")
+    default_timeout = float(defaults.get("timeout", 900.0))
     size = str(_defaulted(size, defaults, "size", "auto"))
     quality = str(_defaulted(quality, defaults, "quality", "auto"))
     n = int(_defaulted(n, defaults, "n", 1))
@@ -526,7 +551,7 @@ def generate_openai_image(
         model,
         OPENAI_IMAGE_PROTOCOL,
         payload=_merge_payload(request_payload, payload),
-        options=_gateway_call_options(options, default_timeout=900.0),
+        options=_gateway_call_options(options, default_timeout=default_timeout),
     )
     return _summarize_image_response(
         response,
@@ -555,6 +580,8 @@ def ask_gateway_search_model(
     default_timeout: float = 1200.0,
 ) -> str:
     defaults = defaults_for_model(model, "search")
+    query = _apply_query_template(query, defaults)
+    system_prompt = _defaulted(system_prompt, defaults, "system_prompt", None)
     temperature = _defaulted(temperature, defaults, "temperature", None)
     max_tokens = _defaulted(max_tokens, defaults, "max_tokens", None)
     top_p = _defaulted(top_p, defaults, "top_p", None)

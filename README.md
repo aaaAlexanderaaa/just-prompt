@@ -9,13 +9,28 @@
 
 ## Tools
 
-The following MCP tools are available in the server:
+The core MCP tools are always available. Model-specific gateway tools such as
+`grok_4_20_multi_agent_xhigh` are declared in `gateway_model_tools` inside
+`just-prompt.config.json`; edit that list to add, remove, rename, or hide
+model-as-tool entries without changing Python code.
+
+The repository config currently exposes these tools:
 
 - **`ask_model`**: Ask exactly one model through the configured gateway or a known provider prefix
   - Parameters:
     - `model`: Model ID. Unprefixed IDs are sent to the configured OpenAI-compatible gateway and use model metadata to auto-select a compatible protocol.
     - `prompt`: The prompt text
-    - `options` (optional): Gateway options such as `protocol` (`auto` by default), `temperature`, `max_tokens`, `top_p`, `base_url`, `api_key`, `timeout`, and `payload` overrides
+    - `options` (optional): Gateway options such as `protocol` (`auto` by default), `temperature`, `top_p`, `base_url`, `api_key`, `timeout`, and `payload` overrides. Omit `max_tokens` by default; it is a hard truncation cap, and `0` means uncapped/omitted.
+  - Example:
+    ```json
+    {
+      "model": "kimi-k2.7-code",
+      "prompt": "Review this code. Here is the full relevant file content: ...",
+      "options": { "timeout": 1200 }
+    }
+    ```
+  - Timeout note: `options.timeout` is how long just-prompt waits for the gateway HTTP response. A backend may continue running after a client-side timeout. Some MCP clients also have their own tool-call timeout.
+  - Context note: cloud models cannot read local files, repositories, terminal output, or previous tool results unless you include that content in the prompt or use `prompt_from_file`.
 
 - **`mimo_v2_5_tts`**: Generate speech with `mimo-v2.5-tts`
   - Parameters:
@@ -32,7 +47,7 @@ The following MCP tools are available in the server:
 - **`minimax_m3_free`**: Ask `minimax-m3:free` through non-streaming OpenAI chat completions
   - Parameters:
     - `prompt` (required)
-    - `system_prompt`, `temperature`, `max_tokens`, `top_p` (optional)
+    - `system_prompt`, `temperature`, `max_tokens`, `top_p` (optional). Omit `max_tokens` unless you intentionally want truncation.
     - `payload` / `options` (optional)
   - Output: plain text from the model.
 
@@ -50,6 +65,7 @@ The following MCP tools are available in the server:
     - `system_prompt`, `temperature`, `max_tokens`, `top_p`, `search_parameters` (optional)
     - `payload` / `options` (optional)
   - Output: plain text from the model. Default timeout is longer than normal chat calls.
+  - Caveat: this is internet research only, not local file search. Treat returned claims as evidence to verify against sources, not as absolute truth.
 
 - **`prompt`**: Send a prompt to multiple LLM models
   - Parameters:
@@ -59,7 +75,7 @@ The following MCP tools are available in the server:
 
 - **`prompt_from_file`**: Send a prompt from a file to multiple LLM models
   - Parameters:
-    - `abs_file_path`: Absolute path to the file containing the prompt (must be an absolute path, not relative)
+    - `abs_file_path`: Absolute path to an existing file inside the configured file access root. The default root is the just-prompt server's current working directory; set `JUST_PROMPT_FILE_ROOT` or `--file-access-root` when the file lives elsewhere.
     - `models_prefixed_by_provider` (optional): List of models with provider prefixes. If not provided, uses default models.
 
 - **`prompt_from_file_to_file`**: Send a prompt from a file to multiple LLM models and save responses as markdown files
@@ -196,6 +212,38 @@ want generated files under a different allowed directory. If `output_path` is
 omitted, files are saved under `generated/`. If `output_path` points to a
 directory such as `./`, the tool creates a timestamped filename inside it.
 
+Model-as-tool entries are declarative. Add an entry under
+`gateway_model_tools` to expose a gateway model as an MCP tool:
+
+```json
+{
+  "gateway_model_tools": [
+    {
+      "name": "deep_research",
+      "model": "grok-4.20-multi-agent-xhigh",
+      "category": "search",
+      "description": "Run long-form research through the configured gateway.",
+      "enabled": true
+    }
+  ]
+}
+```
+
+Supported categories are `text`, `speech`, `image`, and `search`. The category
+selects the MCP input schema and runtime adapter. Set `enabled` to `false` to
+hide a configured tool without deleting it. Tool names cannot override core
+tools such as `ask_model`, `prompt`, or `list_gateway_models`.
+
+General model-call rules for agents:
+
+- Pass all required context explicitly. A cloud model cannot inspect local files
+  or workspace state just because just-prompt is running locally.
+- Do not set `max_tokens` by habit. It is a hard truncation cap; omit it for the
+  broadest output, or pass `0` to have just-prompt treat it as omitted.
+- For slow models, set `options.timeout` high enough for the task. `ask_model`
+  defaults to a 900 second gateway wait, search tools default to 1200 seconds,
+  and some MCP clients may still enforce a separate tool-call timeout.
+
 Model defaults are configurable in `just-prompt.config.json`. The project reads
 that file by default, then merges `JUST_PROMPT_CONFIG_FILE` and
 `JUST_PROMPT_CONFIG` if they are set. Defaults merge in this order:
@@ -212,21 +260,48 @@ Example config file:
   "gateway": {
     "base_url": "https://tokendance.space/gateway/v1"
   },
+  "gateway_model_tools": [
+    {
+      "name": "gpt_image_2",
+      "model": "gpt-image-2",
+      "category": "image",
+      "description": "Generate an image with the gateway model gpt-image-2."
+    },
+    {
+      "name": "grok_4_20_multi_agent_xhigh",
+      "model": "grok-4.20-multi-agent-xhigh",
+      "category": "search",
+      "description": "Run long-form research through the configured gateway."
+    }
+  ],
   "model_categories": {
     "your-custom-image-model": "image"
   },
   "model_defaults": {
     "categories": {
+      "text": {
+        "timeout": 900,
+        "max_tokens": 0
+      },
       "image": {
         "size": "4k",
         "quality": "auto",
         "n": 1,
         "output_format": "png"
+      },
+      "search": {
+        "timeout": 1200,
+        "max_tokens": 0
       }
     },
     "models": {
       "gpt-image-2": {
         "size": "4k"
+      },
+      "grok-4.20-multi-agent-xhigh": {
+        "system_prompt": "Prefer primary sources, include concrete publication dates, and separate verified facts from inference.",
+        "timeout": 1200,
+        "query_template": "Perform deep research on {topic}."
       }
     }
   }
@@ -380,11 +455,20 @@ Typical result:
 ### `grok_4_20_multi_agent_xhigh`
 
 Calls the long-running, non-streaming search model
-`grok-4.20-multi-agent-xhigh` through OpenAI chat completions. This is the
+`grok-4.20-multi-agent-xhigh` through OpenAI chat completions. This tool is a
+`gateway_model_tools` declaration with category `search`, so you can remove,
+rename, disable, or replace it from `just-prompt.config.json`. This is the
 first-layer deep-research tool — Chinese community on linux.do calls it
 "传奇搜索大王". It is especially strong for real-time X data plus academic
 paper, policy, official report, and market synthesis. Use it before Exa,
 Bocha, or default web search when current external evidence quality matters.
+
+Important caveat: this tool is powerful because it can search broader internet
+source surfaces and run richer multi-step research. Its final summarizer is
+still an AI model, not an oracle. Treat returned claims as evidence to verify
+against cited sources, not as absolute truth. It also cannot search local files
+or private workspace state; paste local context into the query/payload when it
+matters.
 
 Recommended fallback chain when this model is unreachable or times out:
 `grok_4_20_multi_agent_xhigh` -> Exa -> Bocha -> default web search.
@@ -411,7 +495,8 @@ Best practice: precisely define scope and depth; specify required research
 dimensions, data freshness, and source quality. Force structured output such
 as Executive Summary, Findings with inline citations, Agent Debate Highlights,
 Uncertainties/Gaps, Sources, and Recommendations. Prefer English prompts for
-stronger consistency.
+stronger consistency. Ask for source URLs, publication dates, primary evidence,
+and uncertainty notes whenever factual accuracy matters.
 
 Recommended `system_prompt`:
 
@@ -419,9 +504,10 @@ Recommended `system_prompt`:
 Prefer primary sources, include concrete publication dates, and separate verified facts from inference.
 ```
 
-Recommended deep-research query template (also shipped at
-`prompts/grok_deep_research.txt` for `prompt_from_file` reuse, so other
-projects do not have to re-derive it):
+Recommended deep-research query template (configured under
+`model_defaults.models.grok-4.20-multi-agent-xhigh.query_template` in this
+repository and also shipped at `prompts/grok_deep_research.txt` for
+`prompt_from_file` reuse):
 
 ```
 Perform a comprehensive 16-agent Realtime Multi-Agent Deep Research in xhigh mode on [主题]. Leave no stone unturned.

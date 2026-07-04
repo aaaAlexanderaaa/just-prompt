@@ -16,6 +16,7 @@ from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 from pydantic import BaseModel, Field
 
+from .atoms.shared.model_defaults import configured_gateway_model_tools
 from .atoms.shared.parameters import (
     parse_json_array_parameter,
     parse_json_object_parameter,
@@ -30,11 +31,10 @@ from .molecules.ask_model import (
 )
 from .molecules.ceo_and_board_prompt import DEFAULT_CEO_MODEL, ceo_and_board_prompt
 from .molecules.gateway_model_tools import (
-    ask_grok_4_20_multi_agent_xhigh,
-    ask_minimax_m3_free,
-    generate_gpt_image_2,
-    generate_mimo_v2_5_tts,
-    generate_minimax_speech_2_8_turbo,
+    ask_gateway_chat_model,
+    ask_gateway_search_model,
+    generate_minimax_tts,
+    generate_openai_image,
 )
 from .molecules.list_models import list_models as list_models_func
 from .molecules.list_providers import list_providers as list_providers_func
@@ -71,6 +71,26 @@ SENSITIVE_ARGUMENT_KEYS = {
 }
 
 PATH_ARGUMENT_KEYS = {"abs_file_path", "abs_output_dir", "file_path", "output_dir", "output_path"}
+
+CLOUD_MODEL_CONTEXT_NOTICE = (
+    "Cloud model context rule: the called model only sees the prompt/payload you send. "
+    "It cannot inspect local files, repositories, terminal output, screenshots, or previous "
+    "tool results unless you include that content explicitly. Use prompt_from_file with an "
+    "allowed absolute path when file contents should be sent to the model."
+)
+
+MAX_TOKENS_GUIDANCE = (
+    "Hard output cap. Omit by default; just-prompt does not impose an output cap unless "
+    "you set one. Values <= 0 are treated as uncapped/omitted. Do not pass a small "
+    "max_tokens value by habit."
+)
+
+TIMEOUT_GUIDANCE = (
+    "Timeout is the number of seconds just-prompt's HTTP client waits for the gateway. "
+    "Long model calls can legitimately take several minutes; for slow models use "
+    "options.timeout such as 900, 1200, or 1800. Some MCP clients also have their own "
+    "tool-call timeout outside just-prompt."
+)
 
 
 def _summarize_for_log(value: Any) -> Any:
@@ -143,11 +163,6 @@ def _optional_int_argument(value: Any) -> int | None:
 # Tool names enum
 class JustPromptTools:
     ASK_MODEL = "ask_model"
-    MIMO_V2_5_TTS = "mimo_v2_5_tts"
-    MINIMAX_SPEECH_2_8_TURBO = "minimax_speech_2_8_turbo"
-    MINIMAX_M3_FREE = "minimax_m3_free"
-    GPT_IMAGE_2 = "gpt_image_2"
-    GROK_4_20_MULTI_AGENT_XHIGH = "grok_4_20_multi_agent_xhigh"
     PROMPT = "prompt"
     PROMPT_FROM_FILE = "prompt_from_file"
     PROMPT_FROM_FILE_TO_FILE = "prompt_from_file_to_file"
@@ -157,6 +172,15 @@ class JustPromptTools:
     LIST_GATEWAY_MODELS = "list_gateway_models"
     CALL_MODEL_PROTOCOL = "call_model_protocol"
     GET_MODEL_TASK = "get_model_task"
+
+
+def _core_tool_names() -> set[str]:
+    return {
+        value
+        for key, value in JustPromptTools.__dict__.items()
+        if not key.startswith("_") and isinstance(value, str)
+    }
+
 
 # Schema classes for MCP tools
 class PromptSchema(BaseModel):
@@ -172,11 +196,17 @@ class PromptSchema(BaseModel):
 
 
 class AskModelSchema(BaseModel):
-    model: str = Field(..., description="Model ID. Unprefixed IDs are sent to the configured OpenAI-compatible gateway.")
-    prompt: str = Field(..., description="Prompt text to send to the model")
+    model: str = Field(..., description="Model ID. Unprefixed IDs are sent to the configured OpenAI-compatible gateway. Example: kimi-k2.7-code.")
+    prompt: str = Field(..., description=f"Prompt text to send to the model. Include all context the cloud model needs. {CLOUD_MODEL_CONTEXT_NOTICE}")
     options: dict[str, Any] | str | None = Field(
         None,
-        description="Optional gateway options. Use protocol='auto' to infer from model metadata, or pass a protocol ID plus payload/chat options such as temperature, max_tokens, top_p, api_key, base_url, timeout.",
+        description=(
+            "Optional gateway options. Use protocol='auto' to infer from model metadata, "
+            "or pass a protocol ID plus payload/chat options such as temperature, top_p, "
+            "api_key, base_url, timeout, and provider-specific reasoning/search fields. "
+            f"{MAX_TOKENS_GUIDANCE} {TIMEOUT_GUIDANCE} Example: "
+            '{"protocol":"auto","timeout":1200}.'
+        ),
     )
 
 
@@ -199,17 +229,17 @@ class GatewaySpeechSchema(BaseModel):
 
 
 class GatewayChatSchema(BaseModel):
-    prompt: str = Field(..., description="Prompt text")
+    prompt: str = Field(..., description=f"Prompt text. Include all context the cloud model needs. {CLOUD_MODEL_CONTEXT_NOTICE}")
     system_prompt: str | None = Field(None, description="Optional system prompt")
     temperature: float | None = Field(None, description="Sampling temperature")
-    max_tokens: int | None = Field(None, description="Maximum output tokens")
+    max_tokens: int | None = Field(None, description=MAX_TOKENS_GUIDANCE)
     top_p: float | None = Field(None, description="Nucleus sampling value")
     payload: dict[str, Any] | str | None = Field(None, description="Optional raw chat-completions payload overrides")
-    options: dict[str, Any] | str | None = Field(None, description="Optional gateway call options: api_key, base_url, timeout")
+    options: dict[str, Any] | str | None = Field(None, description=f"Optional gateway call options: api_key, base_url, timeout. {TIMEOUT_GUIDANCE}")
 
 
 class GptImage2Schema(BaseModel):
-    prompt: str = Field(..., description="Image prompt")
+    prompt: str = Field(..., description=f"Image prompt. Include every visual detail the cloud model needs; it cannot see local images/files unless the gateway payload explicitly supports and includes them. {CLOUD_MODEL_CONTEXT_NOTICE}")
     output_path: str | None = Field(None, description="Optional image file path or output directory. Directory paths save generated filenames inside that directory; omitted paths default to generated/gpt-image-2-<utc>.png under the configured file root.")
     size: str | None = Field(None, description="Image size. Omit to use the configured default; this project defaults image models to 4k.")
     quality: str | None = Field(None, description="Image quality. Omit to use the configured default, or pass a provider-supported explicit value when you intentionally want to override it.")
@@ -222,20 +252,13 @@ class GptImage2Schema(BaseModel):
     options: dict[str, Any] | str | None = Field(None, description="Optional gateway call options: api_key, base_url, timeout, media_download_timeout")
 
 
-class GrokSearchSchema(BaseModel):
+class GatewaySearchSchema(BaseModel):
     query: str = Field(
         ...,
         description=(
-            "Search or research question. Prefer concrete entities, dates, and desired evidence.\n"
-            "\n"
-            "For deep research, use this template (fill in [topic]):\n"
-            "Perform a comprehensive 16-agent Realtime Multi-Agent Deep Research in xhigh mode on [topic]. Leave no stone unturned. "
-            "Harper team: be exhaustive with web, X (use advanced operators for latest posts), academic papers, official reports. "
-            "Benjamin: verify all technical/financial/logical claims. "
-            "Lucas: ruthlessly challenge assumptions and explore contrarian scenarios. "
-            "Follow strict process: decompose -> parallel research -> multiple rounds of debate -> consensus synthesis. "
-            "Deliver a professional-grade report equivalent to a top consulting firm team working for days. "
-            "Structure: Executive Summary, Detailed Analysis (use tables for comparisons), Counterarguments & Limitations, Actionable Insights, Complete References with links where available."
+            "Search or research question for internet/source-backed research. Prefer concrete "
+            "entities, dates, and desired evidence. This is not local file search; include any "
+            f"local context explicitly. {CLOUD_MODEL_CONTEXT_NOTICE}"
         ),
     )
     system_prompt: str | None = Field(
@@ -243,18 +266,18 @@ class GrokSearchSchema(BaseModel):
         description="Optional instructions for source quality, synthesis style, or output structure. Example: \"Prefer primary sources, include concrete publication dates, and separate verified facts from inference.\"",
     )
     temperature: float | None = Field(None, description="Optional sampling temperature.")
-    max_tokens: int | None = Field(None, description="Optional maximum output tokens.")
+    max_tokens: int | None = Field(None, description=MAX_TOKENS_GUIDANCE)
     top_p: float | None = Field(None, description="Optional nucleus sampling value.")
     search_parameters: dict[str, Any] | str | None = Field(None, description="Optional provider-specific search parameters passed through to the gateway.")
     payload: dict[str, Any] | str | None = Field(None, description="Optional raw chat-completions payload overrides for just-prompt. Use only when the task requires provider-specific fields.")
     options: dict[str, Any] | str | None = Field(
         None,
-        description="Optional gateway call options such as timeout, api_key, or base_url. Default timeout is 1200s; raise via options.timeout only when truly needed. Normal calls should omit this.",
+        description=f"Optional gateway call options such as timeout, api_key, or base_url. Search tools default to 1200s. {TIMEOUT_GUIDANCE}",
     )
 
 
 class PromptFromFileSchema(BaseModel):
-    abs_file_path: str = Field(..., description="Absolute path to the file containing the prompt (must be an absolute path, not relative)")
+    abs_file_path: str = Field(..., description="Absolute path to the file containing the prompt. The file must already exist and be inside the configured file access root, which defaults to the just-prompt server's current working directory. If you create a temporary prompt file, pass its absolute path and set JUST_PROMPT_FILE_ROOT or --file-access-root when it lives outside that root.")
     models_prefixed_by_provider: list[str] | str | None = Field(
         None,
         description="List of models with provider prefixes (e.g., 'openai:gpt-4o' or 'o:gpt-4o'). If not provided, uses default models."
@@ -262,14 +285,14 @@ class PromptFromFileSchema(BaseModel):
     error_strategy: dict[str, Any] | str | None = Field(None, description="Optional error handling object")
 
 class PromptFromFileToFileSchema(BaseModel):
-    abs_file_path: str = Field(..., description="Absolute path to the file containing the prompt (must be an absolute path, not relative)")
+    abs_file_path: str = Field(..., description="Absolute path to the file containing the prompt. The file must already exist and be inside the configured file access root, which defaults to the just-prompt server's current working directory.")
     models_prefixed_by_provider: list[str] | str | None = Field(
         None,
         description="List of models with provider prefixes (e.g., 'openai:gpt-4o' or 'o:gpt-4o'). If not provided, uses default models."
     )
     abs_output_dir: str = Field(
         default=".",
-        description="Absolute directory path to save the response files to (must be an absolute path, not relative. Default: current directory)"
+        description="Absolute directory path to save response files. It must be inside the configured file access root. Default: current directory."
     )
     error_strategy: dict[str, Any] | str | None = Field(None, description="Optional error handling object")
 
@@ -306,20 +329,40 @@ class GetModelTaskSchema(BaseModel):
     options: dict[str, Any] | str | None = Field(None, description="Optional gateway call options: api_key, base_url, timeout")
 
 class CEOAndBoardSchema(BaseModel):
-    abs_file_path: str = Field(..., description="Absolute path to the file containing the prompt (must be an absolute path, not relative)")
+    abs_file_path: str = Field(..., description="Absolute path to the file containing the prompt. The file must already exist and be inside the configured file access root.")
     models_prefixed_by_provider: list[str] | str | None = Field(
         None,
         description="List of models with provider prefixes to act as board members. If not provided, uses default models."
     )
     abs_output_dir: str = Field(
         default=".",
-        description="Absolute directory path to save the response files and CEO decision (must be an absolute path, not relative)"
+        description="Absolute directory path to save response files and CEO decision. It must be inside the configured file access root."
     )
     ceo_model: str = Field(
         default=DEFAULT_CEO_MODEL,
         description="Model to use for the CEO decision in format 'provider:model'"
     )
     error_strategy: dict[str, Any] | str | None = Field(None, description="Optional error handling object")
+
+
+def _configured_gateway_tool_schema(category: str) -> dict[str, Any]:
+    if category == "text":
+        return GatewayChatSchema.schema()
+    if category == "speech":
+        return GatewaySpeechSchema.schema()
+    if category == "image":
+        return GptImage2Schema.schema()
+    if category == "search":
+        return GatewaySearchSchema.schema()
+    raise ValueError(f"Unsupported gateway model tool category: {category}")
+
+
+def _configured_gateway_tool(tool_config: dict[str, Any]) -> Tool:
+    return Tool(
+        name=tool_config["name"],
+        description=f"{tool_config['description']}\n\n{CLOUD_MODEL_CONTEXT_NOTICE}",
+        inputSchema=_configured_gateway_tool_schema(tool_config["category"]),
+    )
 
 
 async def serve(default_models: str = DEFAULT_MODEL) -> None:
@@ -345,6 +388,18 @@ async def serve(default_models: str = DEFAULT_MODEL) -> None:
     # Check and log provider availability
     print_provider_availability()
 
+    configured_model_tools = configured_gateway_model_tools()
+    configured_model_tools_by_name = {
+        tool["name"]: tool
+        for tool in configured_model_tools
+    }
+    reserved_tool_collisions = sorted(set(configured_model_tools_by_name) & _core_tool_names())
+    if reserved_tool_collisions:
+        raise ValueError(
+            "gateway model tool names cannot override core tools: "
+            + ", ".join(reserved_tool_collisions)
+        )
+
     # Create the MCP server
     server = Server("just-prompt")
 
@@ -354,66 +409,36 @@ async def serve(default_models: str = DEFAULT_MODEL) -> None:
         return [
             Tool(
                 name=JustPromptTools.ASK_MODEL,
-                description="Ask exactly one model. Unprefixed model IDs are sent to the configured OpenAI-compatible gateway.",
+                description=(
+                    "Ask exactly one model. Unprefixed model IDs are sent to the configured "
+                    "OpenAI-compatible gateway. Example: model='kimi-k2.7-code', "
+                    "prompt='<include all needed context>', options={'timeout':1200}. "
+                    f"{TIMEOUT_GUIDANCE} {CLOUD_MODEL_CONTEXT_NOTICE}"
+                ),
                 inputSchema=AskModelSchema.schema(),
             ),
-            Tool(
-                name=JustPromptTools.MIMO_V2_5_TTS,
-                description="Generate speech with the gateway model mimo-v2.5-tts. Uses assistant-role chat audio by default and saves returned audio bytes, base64, hex, or URL media to a local file.",
-                inputSchema=GatewaySpeechSchema.schema(),
-            ),
-            Tool(
-                name=JustPromptTools.MINIMAX_SPEECH_2_8_TURBO,
-                description="Generate speech with the gateway model minimax-speech-2.8-turbo. Uses assistant-role chat audio by default and saves returned audio bytes, base64, hex, or URL media to a local file when the gateway has a live endpoint.",
-                inputSchema=GatewaySpeechSchema.schema(),
-            ),
-            Tool(
-                name=JustPromptTools.MINIMAX_M3_FREE,
-                description="Ask the gateway chat model minimax-m3:free through non-streaming OpenAI chat completions.",
-                inputSchema=GatewayChatSchema.schema(),
-            ),
-            Tool(
-                name=JustPromptTools.GPT_IMAGE_2,
-                description="Generate an image with the gateway model gpt-image-2 through OpenAI image generations. Saves returned base64 image data or downloaded image URLs to a local file.",
-                inputSchema=GptImage2Schema.schema(),
-            ),
-            Tool(
-                name=JustPromptTools.GROK_4_20_MULTI_AGENT_XHIGH,
-                description=(
-                    "Highest-priority AI research/search synthesis via grok-4.20-multi-agent-xhigh. "
-                    "Use this before lighter search tools when current external evidence quality matters and latency is acceptable.\n"
-                    "\n"
-                    "Non-streaming and slow. Prefer it for difficult research questions, source comparison, recent facts, "
-                    "and high-stakes synthesis. The Chinese community on linux.do calls it \"传奇搜索大王\"; it is especially "
-                    "strong for real-time X data plus academic paper, policy, official report, and market synthesis.\n"
-                    "\n"
-                    "Best practice: precisely define scope and depth; specify required research dimensions, data freshness, "
-                    "and source quality. Force structured output such as Executive Summary, Findings with inline citations, "
-                    "Agent Debate Highlights, Uncertainties/Gaps, Sources, and Recommendations. Prefer English prompts for stronger consistency.\n"
-                    "\n"
-                    "Default gateway timeout is 1200s; override via options.timeout. Treat timeouts or gateway errors as a signal "
-                    "to retry or fall back to a lighter search tool."
-                ),
-                inputSchema=GrokSearchSchema.schema(),
-            ),
+            *[
+                _configured_gateway_tool(tool_config)
+                for tool_config in configured_model_tools
+            ],
             Tool(
                 name=JustPromptTools.PROMPT,
-                description="Send a prompt to multiple LLM models",
+                description=f"Send a prompt to multiple LLM models. Include all context in the prompt. {CLOUD_MODEL_CONTEXT_NOTICE}",
                 inputSchema=PromptSchema.schema(),
             ),
             Tool(
                 name=JustPromptTools.PROMPT_FROM_FILE,
-                description="Send a prompt from a file to multiple LLM models. IMPORTANT: You MUST provide an absolute file path (e.g., /path/to/file or C:\\path\\to\\file), not a relative path.",
+                description="Send a prompt from a file to multiple LLM models. IMPORTANT: provide an absolute path to an existing file inside the configured file access root. If the call fails, check the error's resolved path and configured root.",
                 inputSchema=PromptFromFileSchema.schema(),
             ),
             Tool(
                 name=JustPromptTools.PROMPT_FROM_FILE_TO_FILE,
-                description="Send a prompt from a file to multiple LLM models and save responses to files. IMPORTANT: You MUST provide absolute paths (e.g., /path/to/file or C:\\path\\to\\file) for both file and output directory, not relative paths.",
+                description="Send a prompt from a file to multiple LLM models and save responses to files. IMPORTANT: provide absolute paths inside the configured file access root for both input file and output directory.",
                 inputSchema=PromptFromFileToFileSchema.schema(),
             ),
             Tool(
                 name=JustPromptTools.CEO_AND_BOARD,
-                description="Send a prompt to multiple 'board member' models and have a 'CEO' model make a decision based on their responses. IMPORTANT: You MUST provide absolute paths (e.g., /path/to/file or C:\\path\\to\\file) for both file and output directory, not relative paths.",
+                description="Send a prompt to multiple 'board member' models and have a 'CEO' model make a decision based on their responses. IMPORTANT: provide absolute paths inside the configured file access root for both input file and output directory.",
                 inputSchema=CEOAndBoardSchema.schema(),
             ),
             Tool(
@@ -449,10 +474,11 @@ async def serve(default_models: str = DEFAULT_MODEL) -> None:
         options = parse_json_object_parameter(arguments.get("options"), "options")
         return ask_model(arguments["model"], arguments["prompt"], options)
 
-    def _handle_speech(generator, arguments: dict[str, Any]) -> str:
+    def _handle_configured_speech(tool_config: dict[str, Any], arguments: dict[str, Any]) -> str:
         payload = parse_json_object_parameter(arguments.get("payload"), "payload")
         options = parse_json_object_parameter(arguments.get("options"), "options")
-        return generator(
+        return generate_minimax_tts(
+            tool_config["model"],
             text=arguments["text"],
             voice_id=arguments.get("voice_id"),
             output_path=arguments.get("output_path"),
@@ -470,10 +496,11 @@ async def serve(default_models: str = DEFAULT_MODEL) -> None:
             options=options,
         )
 
-    def _handle_minimax_m3_free(arguments: dict[str, Any]) -> str:
+    def _handle_configured_text(tool_config: dict[str, Any], arguments: dict[str, Any]) -> str:
         payload = parse_json_object_parameter(arguments.get("payload"), "payload")
         options = parse_json_object_parameter(arguments.get("options"), "options")
-        return ask_minimax_m3_free(
+        return ask_gateway_chat_model(
+            tool_config["model"],
             prompt=arguments["prompt"],
             system_prompt=arguments.get("system_prompt"),
             temperature=arguments.get("temperature"),
@@ -483,10 +510,11 @@ async def serve(default_models: str = DEFAULT_MODEL) -> None:
             options=options,
         )
 
-    def _handle_gpt_image_2(arguments: dict[str, Any]) -> str:
+    def _handle_configured_image(tool_config: dict[str, Any], arguments: dict[str, Any]) -> str:
         payload = parse_json_object_parameter(arguments.get("payload"), "payload")
         options = parse_json_object_parameter(arguments.get("options"), "options")
-        return generate_gpt_image_2(
+        return generate_openai_image(
+            tool_config["model"],
             prompt=arguments["prompt"],
             output_path=arguments.get("output_path"),
             size=arguments.get("size"),
@@ -500,14 +528,15 @@ async def serve(default_models: str = DEFAULT_MODEL) -> None:
             options=options,
         )
 
-    def _handle_grok(arguments: dict[str, Any]) -> str:
+    def _handle_configured_search(tool_config: dict[str, Any], arguments: dict[str, Any]) -> str:
         search_parameters = parse_json_object_parameter(
             arguments.get("search_parameters"),
             "search_parameters",
         )
         payload = parse_json_object_parameter(arguments.get("payload"), "payload")
         options = parse_json_object_parameter(arguments.get("options"), "options")
-        return ask_grok_4_20_multi_agent_xhigh(
+        return ask_gateway_search_model(
+            tool_config["model"],
             query=arguments["query"],
             system_prompt=arguments.get("system_prompt"),
             temperature=arguments.get("temperature"),
@@ -517,6 +546,21 @@ async def serve(default_models: str = DEFAULT_MODEL) -> None:
             payload=payload,
             options=options,
         )
+
+    def _handle_configured_gateway_model_tool(
+        tool_config: dict[str, Any],
+        arguments: dict[str, Any],
+    ) -> str:
+        category = tool_config["category"]
+        if category == "text":
+            return _handle_configured_text(tool_config, arguments)
+        if category == "speech":
+            return _handle_configured_speech(tool_config, arguments)
+        if category == "image":
+            return _handle_configured_image(tool_config, arguments)
+        if category == "search":
+            return _handle_configured_search(tool_config, arguments)
+        raise ValueError(f"Unsupported gateway model tool category: {category}")
 
     def _format_multi_model(responses: list[str], models_to_use: list[str] | None) -> str:
         models_used = models_to_use if models_to_use else [
@@ -646,18 +690,14 @@ async def serve(default_models: str = DEFAULT_MODEL) -> None:
     # network/file I/O; call_tool runs each via asyncio.to_thread so the stdio
     # server's event loop stays responsive during long (up to 1200s) model calls.
     def _blocking_handler_for(name: str) -> Callable[[dict[str, Any]], str] | None:
+        configured_tool = configured_model_tools_by_name.get(name)
+        if configured_tool:
+            return lambda arguments: _handle_configured_gateway_model_tool(
+                configured_tool,
+                arguments,
+            )
         if name == JustPromptTools.ASK_MODEL:
             return _handle_ask_model
-        if name == JustPromptTools.MIMO_V2_5_TTS:
-            return lambda a: _handle_speech(generate_mimo_v2_5_tts, a)
-        if name == JustPromptTools.MINIMAX_SPEECH_2_8_TURBO:
-            return lambda a: _handle_speech(generate_minimax_speech_2_8_turbo, a)
-        if name == JustPromptTools.MINIMAX_M3_FREE:
-            return _handle_minimax_m3_free
-        if name == JustPromptTools.GPT_IMAGE_2:
-            return _handle_gpt_image_2
-        if name == JustPromptTools.GROK_4_20_MULTI_AGENT_XHIGH:
-            return _handle_grok
         if name == JustPromptTools.PROMPT:
             return _handle_prompt
         if name == JustPromptTools.PROMPT_FROM_FILE:
