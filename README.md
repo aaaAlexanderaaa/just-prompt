@@ -12,11 +12,13 @@
 `just-prompt` exposes two kinds of MCP tools:
 
 - Core tools that are always present.
-- Gateway model tools declared by you in `just-prompt.config.json`.
+- Gateway model tools declared through shared or local config.
 
 The model-specific tools are not meant to be hard-coded in Python or in this
-README. Add, remove, rename, or hide them by editing `gateway_model_tools`, then
-restart the MCP server so the client can refresh its tool list.
+README. Add, remove, rename, or hide them by editing `gateway_model_tools` in
+`just-prompt.config.json`, `just-prompt.local.d/*.json`, or another supported
+config source, then restart the MCP server so the client can refresh its tool
+list.
 
 Core tools:
 
@@ -112,14 +114,32 @@ MODEL_GATEWAY_API_KEY=your_gateway_api_key
 
 Config file roles are intentionally narrow:
 
-- `just-prompt.config.json`: shared non-secret runtime config for CLI and MCP.
+- `just-prompt.config.json`: checked-in shared baseline config for CLI and MCP,
+  such as gateway URLs, `default_models`, file roots, and generic defaults. Keep
+  user-specific model tool declarations out of this file unless the whole repo
+  should expose them by default.
+- `just-prompt.local.d/*.json`: ignored local config fragments for the tools you
+  personally want to expose on this machine.
 - `.env`: secrets and provider credentials.
 - `.mcp.json`: MCP client launch command only.
 - `pyproject.toml` and `uv.lock`: package/dependency metadata, not runtime config.
 
-`just-prompt.config.json` is loaded first. `JUST_PROMPT_CONFIG_FILE` can point
-to another JSON file to merge on top, and `JUST_PROMPT_CONFIG` can provide a
-final inline JSON override.
+Config is merged in this order:
+
+- `just-prompt.config.json`
+- `just-prompt.local.d/*.json`, sorted by filename; this directory is ignored
+  by git and is intended for local tools
+- `JUST_PROMPT_CONFIG_DIR`, when set; all `*.json` files in that directory are
+  merged in sorted order
+- `JUST_PROMPT_CONFIG_FILE`, when set; this may point to one JSON file or a
+  directory of JSON files
+- `JUST_PROMPT_CONFIG`, when set; inline JSON with the highest priority
+
+You can declare many tools in one file, or keep one tool per file under
+`just-prompt.local.d/`. `gateway_model_tools` entries are merged by tool name,
+so a later file can add a new tool or override fields on an existing local tool.
+In the normal local workflow, use `just-prompt.config.json` for shared base
+settings and `just-prompt.local.d/*.json` for the actual model-as-tool list.
 
 ## Configure Model Tools
 

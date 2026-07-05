@@ -55,6 +55,126 @@ def test_inline_env_defaults_override_file_defaults(tmp_path, monkeypatch):
     assert defaults["size"] == "8k"
 
 
+def test_load_app_config_merges_local_config_fragments(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    Path("just-prompt.config.json").write_text(
+        json.dumps(
+            {
+                "gateway_model_tools": [
+                    {
+                        "name": "base_chat",
+                        "model": "base-chat-model",
+                        "category": "text",
+                    }
+                ],
+                "model_defaults": {
+                    "categories": {
+                        "search": {
+                            "timeout": 1200,
+                        }
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    local_dir = Path(model_defaults.CONFIG_LOCAL_DIR_NAME)
+    local_dir.mkdir()
+    (local_dir / "01-search.json").write_text(
+        json.dumps(
+            {
+                "gateway_model_tools": [
+                    {
+                        "name": "research_web",
+                        "model": "search-model",
+                        "category": "search",
+                    }
+                ],
+                "model_defaults": {
+                    "models": {
+                        "search-model": {
+                            "timeout": 1800,
+                        }
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    (local_dir / "02-image.json").write_text(
+        json.dumps(
+            {
+                "gateway_model_tools": {
+                    "image_creator": {
+                        "model": "image-model",
+                        "category": "image",
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    config = model_defaults.load_app_config()
+    tools = model_defaults.configured_gateway_model_tools(config)
+
+    assert [tool["name"] for tool in tools] == [
+        "base_chat",
+        "research_web",
+        "image_creator",
+    ]
+    assert model_defaults.defaults_for_model(
+        "search-model",
+        "search",
+        config=config["model_defaults"],
+    )["timeout"] == 1800
+
+
+def test_gateway_model_tools_merge_by_name_across_fragments(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    Path("just-prompt.config.json").write_text(
+        json.dumps(
+            {
+                "gateway_model_tools": [
+                    {
+                        "name": "research_web",
+                        "model": "search-model",
+                        "category": "search",
+                        "description": "Old description.",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    local_dir = Path(model_defaults.CONFIG_LOCAL_DIR_NAME)
+    local_dir.mkdir()
+    (local_dir / "01-research-description.json").write_text(
+        json.dumps(
+            {
+                "gateway_model_tools": [
+                    {
+                        "name": "research_web",
+                        "description": "New description.",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    tools = model_defaults.configured_gateway_model_tools()
+
+    assert tools == [
+        {
+            "name": "research_web",
+            "model": "search-model",
+            "category": "search",
+            "description": "New description.",
+        }
+    ]
+
+
 def test_app_env_defaults_from_shared_config():
     env = model_defaults.app_env_defaults(
         {

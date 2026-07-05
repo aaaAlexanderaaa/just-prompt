@@ -8,8 +8,10 @@ from pathlib import Path
 from typing import Any
 
 CONFIG_FILE_ENV = "JUST_PROMPT_CONFIG_FILE"
+CONFIG_DIR_ENV = "JUST_PROMPT_CONFIG_DIR"
 CONFIG_JSON_ENV = "JUST_PROMPT_CONFIG"
 CONFIG_FILE_NAME = "just-prompt.config.json"
+CONFIG_LOCAL_DIR_NAME = "just-prompt.local.d"
 GATEWAY_MODEL_TOOLS_CONFIG_KEY = "gateway_model_tools"
 GATEWAY_MODEL_TOOL_CATEGORIES = {"text", "speech", "image", "search"}
 
@@ -26,10 +28,63 @@ def normalize_model_id(model: str) -> str:
     return MODEL_ID_ALIASES.get(model, model)
 
 
+def _gateway_tool_entries_for_merge(raw_tools: Any) -> list[dict[str, Any]]:
+    if raw_tools is None:
+        return []
+    if isinstance(raw_tools, dict):
+        entries = []
+        for name, raw_tool in raw_tools.items():
+            if not isinstance(raw_tool, dict):
+                raise ValueError(
+                    f"{GATEWAY_MODEL_TOOLS_CONFIG_KEY}.{name} must be a JSON object"
+                )
+            entries.append({**raw_tool, "name": name})
+        return entries
+    if isinstance(raw_tools, list):
+        entries = []
+        for index, raw_tool in enumerate(raw_tools):
+            if not isinstance(raw_tool, dict):
+                raise ValueError(
+                    f"{GATEWAY_MODEL_TOOLS_CONFIG_KEY}[{index}] must be a JSON object"
+                )
+            name = raw_tool.get("name")
+            if not isinstance(name, str) or not name.strip():
+                raise ValueError(
+                    f"{GATEWAY_MODEL_TOOLS_CONFIG_KEY}[{index}].name is required "
+                    "when merging config fragments"
+                )
+            entries.append(raw_tool)
+        return entries
+    raise ValueError(f"{GATEWAY_MODEL_TOOLS_CONFIG_KEY} must be a list or object")
+
+
+def _merge_gateway_model_tools(base: Any, override: Any) -> list[dict[str, Any]]:
+    merged: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
+
+    for raw_tool in [
+        *_gateway_tool_entries_for_merge(base),
+        *_gateway_tool_entries_for_merge(override),
+    ]:
+        name = raw_tool["name"].strip()
+        if name not in order:
+            order.append(name)
+        existing = merged.get(name)
+        merged[name] = (
+            _merge_dicts(existing, raw_tool)
+            if isinstance(existing, dict)
+            else dict(raw_tool)
+        )
+
+    return [merged[name] for name in order]
+
+
 def _merge_dicts(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     merged = dict(base)
     for key, value in override.items():
-        if (
+        if key == GATEWAY_MODEL_TOOLS_CONFIG_KEY and key in merged:
+            merged[key] = _merge_gateway_model_tools(merged.get(key), value)
+        elif (
             isinstance(value, dict)
             and isinstance(merged.get(key), dict)
         ):
@@ -48,10 +103,30 @@ def _read_json_file(path: Path) -> dict[str, Any]:
     return data
 
 
+def _config_files_in_dir(path: Path) -> list[Path]:
+    if not path.exists():
+        return []
+    if not path.is_dir():
+        raise ValueError(f"just-prompt config directory must be a directory: {path}")
+    return sorted(
+        child
+        for child in path.iterdir()
+        if child.is_file() and child.suffix.lower() == ".json"
+    )
+
+
+def _merge_config_path(config: dict[str, Any], path: Path) -> dict[str, Any]:
+    if path.is_dir():
+        for child in _config_files_in_dir(path):
+            config = _merge_dicts(config, _read_json_file(child))
+        return config
+    return _merge_dicts(config, _read_json_file(path))
+
+
 def load_app_config() -> dict[str, Any]:
     """
-    Load non-secret app config from the project file, optional file override,
-    and env JSON.
+    Load non-secret app config from the project file, local fragments,
+    optional file/directory overrides, and env JSON.
     """
     config: dict[str, Any] = {}
 
@@ -59,12 +134,17 @@ def load_app_config() -> dict[str, Any]:
     if default_path.exists():
         config = _merge_dicts(config, _read_json_file(default_path))
 
+    local_dir = Path(CONFIG_LOCAL_DIR_NAME)
+    for path in _config_files_in_dir(local_dir):
+        config = _merge_dicts(config, _read_json_file(path))
+
+    configured_dir = os.environ.get(CONFIG_DIR_ENV)
+    if configured_dir and configured_dir.strip():
+        config = _merge_config_path(config, Path(configured_dir).expanduser())
+
     configured_path = os.environ.get(CONFIG_FILE_ENV)
     if configured_path and configured_path.strip():
-        config = _merge_dicts(
-            config,
-            _read_json_file(Path(configured_path).expanduser()),
-        )
+        config = _merge_config_path(config, Path(configured_path).expanduser())
 
     inline_json = os.environ.get(CONFIG_JSON_ENV)
     if inline_json and inline_json.strip():

@@ -67,5 +67,8 @@ focus_output/
 
 generated/
 
+# Local just-prompt config fragments loaded by the app.
+just-prompt.local.d/
+
 # Git worktrees
 trees/

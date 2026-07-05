@@ -3,38 +3,6 @@
   "gateway": {
     "base_url": "https://tokendance.space/gateway/v1"
   },
-  "gateway_model_tools": [
-    {
-      "name": "mimo_v2_5_tts",
-      "model": "mimo-v2.5-tts",
-      "category": "speech",
-      "description": "Generate speech with the gateway model mimo-v2.5-tts. Uses assistant-role chat audio by default and saves returned audio bytes, base64, hex, or URL media to a local file."
-    },
-    {
-      "name": "minimax_speech_2_8_turbo",
-      "model": "minimax-speech-2.8-turbo",
-      "category": "speech",
-      "description": "Generate speech with the gateway model minimax-speech-2.8-turbo. Uses assistant-role chat audio by default and saves returned audio bytes, base64, hex, or URL media to a local file when the gateway has a live endpoint."
-    },
-    {
-      "name": "minimax_m3_free",
-      "model": "minimax-m3:free",
-      "category": "text",
-      "description": "Ask the gateway chat model minimax-m3:free through non-streaming OpenAI chat completions."
-    },
-    {
-      "name": "gpt_image_2",
-      "model": "gpt-image-2",
-      "category": "image",
-      "description": "Generate an image with the gateway model gpt-image-2 through OpenAI image generations. Saves returned base64 image data or downloaded image URLs to a local file."
-    },
-    {
-      "name": "grok_4_20_multi_agent_xhigh",
-      "model": "grok-4.20-multi-agent-xhigh",
-      "category": "search",
-      "description": "Highest-priority internet research/search synthesis via grok-4.20-multi-agent-xhigh. Use this before lighter search tools when current external evidence quality matters and latency is acceptable.\n\nNon-streaming and slow. Prefer it for difficult research questions, source comparison, recent facts, and high-stakes synthesis. It is powerful because it can search broader internet/source surfaces and run richer multi-step research, not because its final summarizer is infallible. The summarizing model is still an AI model with medium-strength reasoning and can make mistakes, overstate weak evidence, or miss context.\n\nThis tool searches the internet only. It cannot read local files, repositories, terminal output, or private workspace state unless you paste that content into query/payload. Do not ask it to inspect local code or files.\n\nUse results as evidence to verify, not as absolute truth. Ask for sources, dates, primary evidence, and uncertainty. Treat returned claims as leads to check against cited sources. Prefer output sections such as Executive Summary, Evidence Table with sources/dates, Uncertainties, and Recommendations.\n\nDefault gateway timeout is 1200s; override via options.timeout. Treat timeouts or gateway errors as a signal to retry with a longer timeout or fall back to a lighter search tool."
-    }
-  ],
   "model_categories": {},
   "model_defaults": {
     "categories": {
@@ -51,13 +19,10 @@
       "search": {
         "timeout": 1200,
         "max_tokens": 0
-      }
-    },
-    "models": {
-      "grok-4.20-multi-agent-xhigh": {
-        "system_prompt": "Prefer primary sources, include concrete publication dates, and separate verified facts from inference.",
-        "timeout": 1200,
-        "query_template": "Perform a comprehensive 16-agent Realtime Multi-Agent Deep Research in xhigh mode on {topic}. Leave no stone unturned.\n\nHarper team: be exhaustive with web, X (use advanced operators for latest posts), academic papers, official reports.\nBenjamin: verify all technical/financial/logical claims.\nLucas: ruthlessly challenge assumptions and explore contrarian scenarios.\n\nFollow strict process: decompose -> parallel research -> multiple rounds of debate -> consensus synthesis.\n\nDeliver a professional-grade report equivalent to a top consulting firm team working for days. Structure: Executive Summary, Detailed Analysis (use tables for comparisons), Counterarguments & Limitations, Actionable Insights, Complete References with links where available."
+      },
+      "speech": {
+        "timeout": 300,
+        "audio_format": "mp3"
       }
     }
   }
