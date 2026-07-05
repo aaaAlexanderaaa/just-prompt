@@ -9,110 +9,52 @@
 
 ## Tools
 
-The core MCP tools are always available. Model-specific gateway tools such as
-`grok_4_20_multi_agent_xhigh` are declared in `gateway_model_tools` inside
-`just-prompt.config.json`; edit that list to add, remove, rename, or hide
-model-as-tool entries without changing Python code.
+`just-prompt` exposes two kinds of MCP tools:
 
-The repository config currently exposes these tools:
+- Core tools that are always present.
+- Gateway model tools declared by you in `just-prompt.config.json`.
 
-- **`ask_model`**: Ask exactly one model through the configured gateway or a known provider prefix
-  - Parameters:
-    - `model`: Model ID. Unprefixed IDs are sent to the configured OpenAI-compatible gateway and use model metadata to auto-select a compatible protocol.
-    - `prompt`: The prompt text
-    - `options` (optional): Gateway options such as `protocol` (`auto` by default), `temperature`, `top_p`, `base_url`, `api_key`, `timeout`, and `payload` overrides. Omit `max_tokens` by default; it is a hard truncation cap, and `0` means uncapped/omitted.
-  - Example:
-    ```json
-    {
-      "model": "kimi-k2.7-code",
-      "prompt": "Review this code. Here is the full relevant file content: ...",
-      "options": { "timeout": 1200 }
-    }
-    ```
-  - Timeout note: `options.timeout` is how long just-prompt waits for the gateway HTTP response. A backend may continue running after a client-side timeout. Some MCP clients also have their own tool-call timeout.
-  - Context note: cloud models cannot read local files, repositories, terminal output, or previous tool results unless you include that content in the prompt or use `prompt_from_file`.
+The model-specific tools are not meant to be hard-coded in Python or in this
+README. Add, remove, rename, or hide them by editing `gateway_model_tools`, then
+restart the MCP server so the client can refresh its tool list.
 
-- **`mimo_v2_5_tts`**: Generate speech with `mimo-v2.5-tts`
-  - Parameters:
-    - `text` (required): Text to synthesize
-    - `voice_id` (default: `male-qn-qingse`, used by speech protocols that accept one)
-    - `output_path` (optional): Audio file path or output directory. Defaults to `generated/mimo-v2.5-tts-<utc>.mp3`
-    - `payload` / `options` (optional): Raw payload overrides and gateway options. Uses assistant-role chat audio by default; pass `options.protocol` as `openai:audio-speech` or `minimax:t2a_v2` when your gateway supports those routes.
-  - Output: JSON with `saved_audio_path` and `saved_audio_bytes`; URL audio responses are downloaded before the tool returns.
+Core tools:
 
-- **`minimax_speech_2_8_turbo`**: Generate speech with `minimax-speech-2.8-turbo`
-  - Parameters are the same as `mimo_v2_5_tts`
-  - Limitation: the integration test gateway returned `no_endpoints_available` for this model on 2026-06-06, so the tool is registered but may not be callable until the gateway exposes a live endpoint.
+- `ask_model`: ask exactly one model. Unprefixed model IDs go to the configured
+  gateway; provider-prefixed IDs keep the legacy direct-provider routing.
+- `prompt`, `prompt_from_file`, `prompt_from_file_to_file`, `ceo_and_board`:
+  legacy multi-model workflows that use provider-prefixed model names.
+- `list_providers`, `list_models`, `list_gateway_models`: inspect providers and
+  gateway model metadata.
+- `call_model_protocol`: call a specific gateway protocol endpoint for chat,
+  image, speech, embedding, video, OCR, search, or reader models.
+- `get_model_task`: poll async protocol tasks such as video generation jobs.
 
-- **`minimax_m3_free`**: Ask `minimax-m3:free` through non-streaming OpenAI chat completions
-  - Parameters:
-    - `prompt` (required)
-    - `system_prompt`, `temperature`, `max_tokens`, `top_p` (optional). Omit `max_tokens` unless you intentionally want truncation.
-    - `payload` / `options` (optional)
-  - Output: plain text from the model.
+For one-off gateway calls, use `ask_model`:
 
-- **`gpt_image_2`**: Generate images with `gpt-image-2`
-  - Parameters:
-    - `prompt` (required)
-    - `output_path` (optional): Image file path or output directory. Defaults to `generated/gpt-image-2-<utc>.png`
-    - `size` (configured default, currently `4k`), `quality` (configured default, currently `auto`), `n` (configured default, currently `1`), `background`, `moderation`, `output_format` (configured default, currently `png`), `output_compression`
-    - `payload` / `options` (optional)
-  - Output: JSON with `saved_image_paths` and `saved_image_bytes`; URL image responses are downloaded before the tool returns.
+```json
+{
+  "model": "kimi-k2.7-code",
+  "prompt": "Review this code. Here is the full relevant file content: ...",
+  "options": {
+    "protocol": "auto",
+    "timeout": 1200
+  }
+}
+```
 
-- **`grok_4_20_multi_agent_xhigh`**: Ask the long-running, non-streaming search model `grok-4.20-multi-agent-xhigh`
-  - Parameters:
-    - `query` (required)
-    - `system_prompt`, `temperature`, `max_tokens`, `top_p`, `search_parameters` (optional)
-    - `payload` / `options` (optional)
-  - Output: plain text from the model. Default timeout is longer than normal chat calls.
-  - Caveat: this is internet research only, not local file search. Treat returned claims as evidence to verify against sources, not as absolute truth.
+Important agent rules:
 
-- **`prompt`**: Send a prompt to multiple LLM models
-  - Parameters:
-    - `text`: The prompt text
-    - `models_prefixed_by_provider` (optional): List of models with provider prefixes. If not provided, uses default models.
-    - `error_strategy` (optional): `{ "strategy": "best_effort" | "all_or_nothing" | "retry_with_backoff", "max_retries": 3, "backoff_seconds": 1 }`
-
-- **`prompt_from_file`**: Send a prompt from a file to multiple LLM models
-  - Parameters:
-    - `abs_file_path`: Absolute path to an existing file inside the configured file access root. The default root is the just-prompt server's current working directory; set `JUST_PROMPT_FILE_ROOT` or `--file-access-root` when the file lives elsewhere.
-    - `models_prefixed_by_provider` (optional): List of models with provider prefixes. If not provided, uses default models.
-
-- **`prompt_from_file_to_file`**: Send a prompt from a file to multiple LLM models and save responses as markdown files
-  - Parameters:
-    - `abs_file_path`: Absolute path to the file containing the prompt (must be an absolute path, not relative)
-    - `models_prefixed_by_provider` (optional): List of models with provider prefixes. If not provided, uses default models.
-    - `abs_output_dir` (default: "."): Absolute directory path to save the response markdown files to (must be an absolute path, not relative)
-
-- **`ceo_and_board`**: Send a prompt to multiple 'board member' models and have a 'CEO' model make a decision based on their responses
-  - Parameters:
-    - `abs_file_path`: Absolute path to the file containing the prompt (must be an absolute path, not relative)
-    - `models_prefixed_by_provider` (optional): List of models with provider prefixes to act as board members. If not provided, uses default models.
-    - `abs_output_dir` (default: "."): Absolute directory path to save the response files and CEO decision (must be an absolute path, not relative)
-    - `ceo_model` (default: "openai:o3"): Model to use for the CEO decision in format "provider:model"
-
-- **`list_providers`**: List all available LLM providers
-  - Parameters: None
-
-- **`list_models`**: List all available models for a specific LLM provider
-  - Parameters:
-    - `provider`: Provider to list models for (e.g., 'openai' or 'o')
-
-- **`list_gateway_models`**: List models from the configured gateway
-  - Parameters:
-    - `detailed` (optional): Return full records, including `supported_protocols`, instead of just IDs
-
-- **`call_model_protocol`**: Call a documented gateway protocol endpoint for models that are not plain chat models
-  - Parameters:
-    - `model`: Model ID
-    - `protocol`: `auto` or a protocol ID such as `openai:chat-completions`, `anthropic:messages`, `gemini:generate-content`, `openai:image-generations`, `openai:audio-speech`, `openai:embeddings`, `seedance:generations`, `minimax:t2a_v2`, `zai:layout-parsing`, `bocha:web-search`, `unifuncs:web-search`, or `unifuncs:web-reader`
-    - `payload`: Protocol request body. The `model` field is added automatically when the protocol expects it in JSON.
-    - `options` (optional): `api_key`, `base_url`, `timeout`, `strict_model_protocol`
-
-- **`get_model_task`**: Poll async video-generation tasks for protocols with documented task endpoints
-  - Parameters:
-    - `protocol`: Async protocol ID such as `seedance:generations` or `happyhorse:video-synthesis`
-    - `task_id`: Task ID returned by the submit call
+- The called cloud model only sees the prompt or payload you send. It cannot
+  inspect local files, repositories, terminal output, screenshots, or previous
+  tool results unless you include that content explicitly.
+- Do not pass `max_tokens` by habit. It is a hard output cap. Omit it for normal
+  full-answer behavior, or pass `0` where supported to have just-prompt treat it
+  as uncapped.
+- `options.timeout` is just-prompt's HTTP wait timeout. Slow gateway calls can
+  take several minutes; use values such as `900`, `1200`, or `1800` seconds when
+  the model is expected to be slow. Some MCP clients also enforce their own
+  tool-call timeout outside just-prompt.
 
 ## Provider Prefixes
 > the legacy multi-model tools use provider prefixes
@@ -138,402 +80,210 @@ The repository config currently exposes these tools:
   - `l:llama3.1`
   - `ollama:llama3.1`
 - `gw` or `gateway`: Generic OpenAI-compatible or multi-protocol gateway
-  - `gw:glm-4.7`
-  - `gateway:qwen3-max`
+  - `gw:your-model-id`
+  - `gateway:your-model-id`
   - aliases: `oc`, `openai-compatible`, `llm`
 
-## Generic Model Gateway
+## Gateway Configuration
 
-The gateway provider is the shortest path for a Model-as-Tool setup:
+The gateway provider is the shortest path for a model-as-tool setup:
 
 ```text
-main agent -> MCP client -> ask_model(model, prompt, options?) -> your gateway -> model
+main agent -> MCP client -> configured tool or ask_model -> your gateway -> model
 ```
 
-Configure non-secret gateway settings in `just-prompt.config.json`:
+Put non-secret runtime settings in `just-prompt.config.json`:
 
 ```json
 {
   "gateway": {
-    "base_url": "https://your-gateway.example.com/v1"
-  }
+    "base_url": "https://your-gateway.example.com/v1",
+    "protocol_base_url": "https://your-gateway.example.com"
+  },
+  "file_access_root": "/absolute/path/allowed-for-file-tools"
 }
 ```
 
-Keep the gateway API key in `.env` or your shell:
+Keep secrets in `.env` or your shell:
 
 ```bash
 MODEL_GATEWAY_API_KEY=your_gateway_api_key
 ```
 
-For gateways that need a separate non-`/v1` protocol root, add
-`gateway.protocol_base_url` to `just-prompt.config.json`.
-
-Use `ask_model` for the common "one prompt in, one result out" path. It looks at gateway model metadata and automatically selects the first compatible protocol it knows how to call:
-
-```json
-{
-  "model": "glm-4.7",
-  "prompt": "Summarize the tradeoffs of MCP model-as-tool wrappers.",
-  "options": { "temperature": 0.2 }
-}
-```
-
-Use `call_model_protocol` for non-chat gateway models. Examples:
-
-```json
-{
-  "model": "qwen-text-embedding-v4",
-  "protocol": "openai:embeddings",
-  "payload": { "input": "semantic search query" }
-}
-```
-
-For the fixed models added above, prefer the dedicated MCP tools. They set the
-right model IDs, force non-streaming calls where needed, use longer timeouts for
-slow image/search requests, and save base64, hex, binary, or URL media responses
-to local files.
-
-## Dedicated Gateway Model Tools
-
-These tools use the shared `just-prompt.config.json` plus secrets from `.env` or
-your shell. CLI calls and the MCP server read the same non-secret config.
-
 Config file roles are intentionally narrow:
 
-- `just-prompt.config.json`: shared non-secret runtime config for both CLI and MCP.
-- `.env`: secrets and provider credentials only.
-- `.mcp.json`: MCP client launch command only; no model defaults or gateway config.
+- `just-prompt.config.json`: shared non-secret runtime config for CLI and MCP.
+- `.env`: secrets and provider credentials.
+- `.mcp.json`: MCP client launch command only.
 - `pyproject.toml` and `uv.lock`: package/dependency metadata, not runtime config.
 
-Media outputs are written inside the configured file root. By default that is
-the MCP server's current working directory; set `JUST_PROMPT_FILE_ROOT` if you
-want generated files under a different allowed directory. If `output_path` is
-omitted, files are saved under `generated/`. If `output_path` points to a
-directory such as `./`, the tool creates a timestamped filename inside it.
+`just-prompt.config.json` is loaded first. `JUST_PROMPT_CONFIG_FILE` can point
+to another JSON file to merge on top, and `JUST_PROMPT_CONFIG` can provide a
+final inline JSON override.
 
-Model-as-tool entries are declarative. Add an entry under
-`gateway_model_tools` to expose a gateway model as an MCP tool:
+## Configure Model Tools
+
+Add gateway model tools under `gateway_model_tools`. You can use either an
+object keyed by tool name or a list of objects with a `name` field.
 
 ```json
 {
-  "gateway_model_tools": [
-    {
-      "name": "deep_research",
-      "model": "grok-4.20-multi-agent-xhigh",
+  "gateway_model_tools": {
+    "research_web": {
+      "model": "your-search-model-id",
       "category": "search",
-      "description": "Run long-form research through the configured gateway.",
+      "description": "Use this for internet research only. Ask for sources, dates, and uncertainty; verify claims before treating them as facts.",
       "enabled": true
+    },
+    "image_creator": {
+      "model": "your-image-model-id",
+      "category": "image",
+      "description": "Generate images through the configured gateway and save the returned media locally."
+    },
+    "tts_reader": {
+      "model": "your-speech-model-id",
+      "category": "speech",
+      "description": "Generate speech through the configured gateway and save the returned audio locally."
     }
-  ]
+  }
 }
 ```
 
-Supported categories are `text`, `speech`, `image`, and `search`. The category
-selects the MCP input schema and runtime adapter. Set `enabled` to `false` to
-hide a configured tool without deleting it. Tool names cannot override core
-tools such as `ask_model`, `prompt`, or `list_gateway_models`.
+Each entry needs:
 
-General model-call rules for agents:
+- `name` when using list form, or the object key when using object form.
+- `model`: the gateway model ID to send.
+- `category`: one of `text`, `search`, `image`, or `speech`.
+- `description`: the instruction shown to the agent in the MCP tool list.
+- `enabled`: optional; set `false` to hide a tool without deleting the config.
 
-- Pass all required context explicitly. A cloud model cannot inspect local files
-  or workspace state just because just-prompt is running locally.
-- Do not set `max_tokens` by habit. It is a hard truncation cap; omit it for the
-  broadest output, or pass `0` to have just-prompt treat it as omitted.
-- For slow models, set `options.timeout` high enough for the task. `ask_model`
-  defaults to a 900 second gateway wait, search tools default to 1200 seconds,
-  and some MCP clients may still enforce a separate tool-call timeout.
+Tool names cannot override core tools such as `ask_model`, `prompt`, or
+`list_gateway_models`.
 
-Model defaults are configurable in `just-prompt.config.json`. The project reads
-that file by default, then merges `JUST_PROMPT_CONFIG_FILE` and
-`JUST_PROMPT_CONFIG` if they are set. Defaults merge in this order:
+Choose the category by the shape of the call you want:
 
-- code fallback
-- category defaults such as `image`
-- model defaults such as `gpt-image-2`
-- explicit MCP/CLI arguments
+- `text`: input is `prompt`; optional `system_prompt`, `temperature`,
+  `top_p`, `max_tokens`, `payload`, and `options`.
+- `search`: input is `query`; optional `system_prompt`, `temperature`,
+  `top_p`, `max_tokens`, `search_parameters`, `payload`, and `options`.
+- `image`: input is `prompt`; optional `output_path`, `size`, `quality`, `n`,
+  `background`, `moderation`, `output_format`, `output_compression`,
+  `payload`, and `options`.
+- `speech`: input is `text`; optional `voice_id`, `output_path`, `speed`,
+  `volume`, `pitch`, `sample_rate`, `bitrate`, `audio_format`, `channel`,
+  `language_boost`, `emotion`, `subtitle_enable`, `payload`, and `options`.
 
-Example config file:
+`payload` is merged into the final request body for adapter-specific fields.
+`options` controls gateway plumbing such as `api_key`, `base_url`, `timeout`,
+`protocol`, `strict_model_protocol`, and `media_download_timeout` where the
+adapter supports them.
+
+Search/research tool descriptions should be explicit about limits. A gateway
+research model may have broader internet/source access and richer search loops,
+but its final summary is still AI-generated and can be wrong. It searches the
+internet, not your local files. If local code, logs, or private context matter,
+put that content in the prompt or payload.
+
+## Configure Defaults
+
+`default_models` chooses which models the legacy multi-model tools use when a
+call does not pass `models_prefixed_by_provider`. The first model is also used
+for model-name correction.
+
+`model_defaults` controls how configured gateway model tools and CLI adapters
+call those models. Category defaults apply first; model-specific defaults
+override them; explicit MCP or CLI arguments override both. Raw `payload` values
+are merged last into the request body.
 
 ```json
 {
-  "gateway": {
-    "base_url": "https://tokendance.space/gateway/v1"
-  },
-  "gateway_model_tools": [
-    {
-      "name": "gpt_image_2",
-      "model": "gpt-image-2",
-      "category": "image",
-      "description": "Generate an image with the gateway model gpt-image-2."
-    },
-    {
-      "name": "grok_4_20_multi_agent_xhigh",
-      "model": "grok-4.20-multi-agent-xhigh",
-      "category": "search",
-      "description": "Run long-form research through the configured gateway."
-    }
-  ],
-  "model_categories": {
-    "your-custom-image-model": "image"
-  },
+  "default_models": "gateway:your-primary-model-id,gateway:your-review-model-id",
   "model_defaults": {
     "categories": {
       "text": {
         "timeout": 900,
         "max_tokens": 0
       },
+      "search": {
+        "timeout": 1200,
+        "max_tokens": 0,
+        "system_prompt": "Prefer primary sources, include concrete dates, and separate verified facts from inference."
+      },
       "image": {
+        "timeout": 900,
         "size": "4k",
         "quality": "auto",
         "n": 1,
         "output_format": "png"
       },
-      "search": {
-        "timeout": 1200,
-        "max_tokens": 0
+      "speech": {
+        "timeout": 300,
+        "audio_format": "mp3",
+        "voice_id": "default-voice-id"
       }
     },
     "models": {
-      "gpt-image-2": {
-        "size": "4k"
+      "your-search-model-id": {
+        "timeout": 1800,
+        "query_template": "Research {topic}. Return sources, dates, confidence, and open questions."
       },
-      "grok-4.20-multi-agent-xhigh": {
-        "system_prompt": "Prefer primary sources, include concrete publication dates, and separate verified facts from inference.",
-        "timeout": 1200,
-        "query_template": "Perform deep research on {topic}."
+      "your-image-model-id": {
+        "size": "2048x2048"
       }
     }
   }
 }
 ```
 
-### `mimo_v2_5_tts`
+Recommended default posture:
 
-Generates speech with `mimo-v2.5-tts`.
+- Set generous timeouts for slow search, reasoning, media, and multi-step
+  models. A client-side timeout does not prove the backend failed; it only means
+  just-prompt stopped waiting.
+- Leave `max_tokens` omitted or `0` unless you intentionally want truncation.
+- Put model-specific prompting, evidence requirements, search parameters, image
+  size, speech voice, and output formats in config so agents do not have to
+  rediscover them on every call.
 
-Required:
-
-- `text`: text to synthesize.
-
-Defaults:
-
-- `output_path`: `generated/mimo-v2.5-tts-<utc>.mp3`
-- `audio_format`: `mp3`
-- `options.protocol`: `auto`, resolved by this tool to `openai:chat-completions`
-- gateway timeout: `300` seconds
-- media URL download timeout: `120` seconds
-
-Accepted parameters:
-
-- `voice_id`, `speed`, `volume`, `pitch`, `sample_rate`, `bitrate`, `audio_format`, `channel`, `language_boost`, `emotion`, `subtitle_enable`
-- `payload`: raw request body overrides
-- `options`: `protocol`, `api_key`, `base_url`, `timeout`, `media_download_timeout`
-
-Protocol notes:
-
-- The current working route for `mimo-v2.5-tts` is assistant-role OpenAI chat audio.
-- `voice_id` and detailed voice/audio settings are only meaningful when the gateway supports `openai:audio-speech` or `minimax:t2a_v2`; the default chat-audio route may ignore them.
-- The tool finishes only after it saves an audio file. It handles raw bytes, hex, base64, data URLs, and HTTP(S) media URLs.
-
-Minimal call:
+For CLI adapter selection, add `model_categories` when a model is not declared
+as a `gateway_model_tools` entry:
 
 ```json
 {
-  "text": "请用自然旁白语气朗读这段家庭档案说明。"
+  "model_categories": {
+    "your-image-model-id": "image",
+    "your-search-model-id": "search"
+  }
 }
 ```
 
-Typical result:
+Media outputs are written inside the configured file root. By default that is
+the MCP server's current working directory. Set `file_access_root`,
+`JUST_PROMPT_FILE_ROOT`, or `--file-access-root` when generated media or
+file-based prompts need another allowed directory. If `output_path` is omitted,
+media tools save files under `generated/`; if it points to a directory, the tool
+creates a timestamped filename inside that directory.
+
+Use `call_model_protocol` when the gateway model is not a normal text, search,
+image, or speech adapter call:
 
 ```json
 {
-  "saved_audio_path": "/path/to/just-prompt/generated/mimo-v2.5-tts-20260606T011609Z.mp3",
-  "saved_audio_bytes": 299564
+  "model": "your-embedding-model-id",
+  "protocol": "openai:embeddings",
+  "payload": {
+    "input": "semantic search query"
+  },
+  "options": {
+    "timeout": 300
+  }
 }
 ```
 
-### `minimax_speech_2_8_turbo`
-
-Registered as a speech tool for `minimax-speech-2.8-turbo` with the same
-parameters and output contract as `mimo_v2_5_tts`.
-
-Known limitation:
-
-- On 2026-06-06, the configured OneAPI gateway returned `no_endpoints_available` for this model through the checked routes. That means the MCP tool is present, but the gateway currently has no usable backend endpoint for it.
-
-### `minimax_m3_free`
-
-Calls `minimax-m3:free` through non-streaming OpenAI chat completions.
-
-Required:
-
-- `prompt`: user prompt.
-
-Optional parameters:
-
-- `system_prompt`: system instruction.
-- `temperature`, `top_p`: sampling controls.
-- `max_tokens`: hard output-length cap. Use it only when you specifically want truncation; omit it for normal full-answer behavior.
-- `payload`: raw chat-completions overrides.
-- `options`: `api_key`, `base_url`, `timeout`.
-
-Minimal call:
-
-```json
-{
-  "prompt": "给我三条家庭知识库整理建议。"
-}
-```
-
-### `gpt_image_2`
-
-Generates an image with `gpt-image-2` through OpenAI image generations.
-
-Required:
-
-- `prompt`: image prompt.
-
-Defaults:
-
-- `size`: `4k` from `just-prompt.config.json`
-- `quality`: `auto`
-- `n`: `1`
-- `output_format`: `png`
-- `output_path`: `generated/gpt-image-2-<utc>.png`
-- gateway timeout: `900` seconds
-- media URL download timeout: `120` seconds
-
-Accepted parameters:
-
-- `size`: configured default is `4k` in this project, or another value accepted by the gateway/model.
-- `quality`: configured default is `auto`, or another explicit quality value accepted by the gateway/model.
-- `n`: number of images. Default is `1`.
-- `background`, `moderation`, `output_format`, `output_compression`
-- `payload`: raw image-generation overrides.
-- `options`: `api_key`, `base_url`, `timeout`, `media_download_timeout`.
-
-Output contract:
-
-- The tool finishes only after it saves local image files.
-- It handles base64/data responses and HTTP(S) image URLs.
-- Returned JSON includes `saved_image_paths` and `saved_image_bytes`; when the gateway returned a URL, it is retained as `source_image_urls` for traceability.
-
-Prompt-only configured-defaults call:
-
-```json
-{
-  "prompt": "A clean editorial illustration of a compact home lab desk, warm morning light, no text."
-}
-```
-
-Explicit-size call:
-
-```json
-{
-  "prompt": "A crisp square illustration of a compact home lab desk, warm morning light, no text.",
-  "n": 1,
-  "size": "1024x1024",
-  "quality": "auto"
-}
-```
-
-On this gateway, examples keep `quality` at `auto` and use the configured image
-size default. Override those fields only when the task itself requires a
-specific setting.
-
-Typical result:
-
-```json
-{
-  "saved_image_paths": ["/path/to/just-prompt/generated/gpt-image-2-20260606T012000Z.png"],
-  "saved_image_bytes": [1048576],
-  "source_image_urls": ["https://example-cdn.invalid/generated-image.png"]
-}
-```
-
-### `grok_4_20_multi_agent_xhigh`
-
-Calls the long-running, non-streaming search model
-`grok-4.20-multi-agent-xhigh` through OpenAI chat completions. This tool is a
-`gateway_model_tools` declaration with category `search`, so you can remove,
-rename, disable, or replace it from `just-prompt.config.json`. This is the
-first-layer deep-research tool — Chinese community on linux.do calls it
-"传奇搜索大王". It is especially strong for real-time X data plus academic
-paper, policy, official report, and market synthesis. Use it before Exa,
-Bocha, or default web search when current external evidence quality matters.
-
-Important caveat: this tool is powerful because it can search broader internet
-source surfaces and run richer multi-step research. Its final summarizer is
-still an AI model, not an oracle. Treat returned claims as evidence to verify
-against cited sources, not as absolute truth. It also cannot search local files
-or private workspace state; paste local context into the query/payload when it
-matters.
-
-Recommended fallback chain when this model is unreachable or times out:
-`grok_4_20_multi_agent_xhigh` -> Exa -> Bocha -> default web search.
-
-Required:
-
-- `query`: research/search question.
-
-Optional parameters:
-
-- `system_prompt`: system instruction.
-- `temperature`, `top_p`: sampling controls.
-- `max_tokens`: hard output-length cap. Use it only when you specifically want truncation; omit it for normal full-answer behavior.
-- `search_parameters`: provider-specific search options.
-- `payload`: raw chat-completions overrides.
-- `options`: `api_key`, `base_url`, `timeout`.
-
-Defaults:
-
-- `stream`: `false`
-- gateway timeout: `1200` seconds
-
-Best practice: precisely define scope and depth; specify required research
-dimensions, data freshness, and source quality. Force structured output such
-as Executive Summary, Findings with inline citations, Agent Debate Highlights,
-Uncertainties/Gaps, Sources, and Recommendations. Prefer English prompts for
-stronger consistency. Ask for source URLs, publication dates, primary evidence,
-and uncertainty notes whenever factual accuracy matters.
-
-Recommended `system_prompt`:
-
-```
-Prefer primary sources, include concrete publication dates, and separate verified facts from inference.
-```
-
-Recommended deep-research query template (configured under
-`model_defaults.models.grok-4.20-multi-agent-xhigh.query_template` in this
-repository and also shipped at `prompts/grok_deep_research.txt` for
-`prompt_from_file` reuse):
-
-```
-Perform a comprehensive 16-agent Realtime Multi-Agent Deep Research in xhigh mode on [主题]. Leave no stone unturned.
-
-Harper team: be exhaustive with web, X (use advanced operators for latest posts), academic papers, official reports.
-Benjamin: verify all technical/financial/logical claims.
-Lucas: ruthlessly challenge assumptions and explore contrarian scenarios.
-
-Follow strict process: decompose -> parallel research -> multiple rounds of debate -> consensus synthesis.
-
-Deliver a professional-grade report equivalent to a top consulting firm team working for days. Structure: Executive Summary, Detailed Analysis (use tables for comparisons), Counterarguments & Limitations, Actionable Insights, Complete References with links where available.
-```
-
-Output contract: synthesized research text. The response may include
-citations, source names, dates, or caveats depending on gateway output. It
-is not streaming; wait for the full result. Treat timeouts or gateway
-errors as a reason to fall back to the next search provider.
-
-Minimal call:
-
-```json
-{
-  "query": "Find recent privacy-minded local AI tooling for home lab operators. Give three concise bullets with dates.",
-  "system_prompt": "Prefer primary sources, include concrete publication dates, and separate verified facts from inference."
-}
-```
+`list_gateway_models` with `detailed=true` returns each model's advertised
+`supported_protocols`. `protocol: "auto"` uses that metadata when possible; if
+the gateway metadata is incomplete, pass the protocol explicitly or set
+`strict_model_protocol` to `false` in `options`.
 
 ## One-Shot CLI Calls
 
@@ -547,48 +297,35 @@ uv run just-prompt call MODEL [--category text|speech|image|search] [adapter opt
 The CLI chooses an adapter in this order:
 
 - If `--category` is provided, use that adapter.
-- If the model is in `model_categories` or the built-in mapping, use the mapped
-  adapter.
+- If the model is declared in `gateway_model_tools`, use that tool's category.
+- If the model is listed in `model_categories`, use that configured category.
 - Otherwise, default to the `text` adapter.
-
-Built-in model mappings:
-
-- `mimo-v2.5-tts`: `speech`
-- `minimax-speech-2.8-turbo`: `speech`
-- `minimax-m3:free`: `text`
-- `gpt-image-2`: `image`
-- `grok-4.20-multi-agent-xhigh`: `search`
-
-Add or override mappings in `just-prompt.config.json` under `model_categories`.
-
-MCP tool-style aliases such as `gpt_image_2` are accepted and normalized to the
-real model ID.
 
 To inspect the accepted parameters and defaults for the resolved adapter, ask
 for help after the model name:
 
 ```bash
-uv run just-prompt call gpt-image-2 --help
-uv run just-prompt call some-new-image-model --category image --help
-uv run just-prompt call unknown-chat-model --help
+uv run just-prompt call your-image-model-id --category image --help
+uv run just-prompt call your-search-model-id --help
+uv run just-prompt call your-chat-model-id --help
 ```
 
 Examples:
 
 ```bash
-uv run just-prompt call minimax-m3:free "给我三条家庭知识库整理建议。"
+uv run just-prompt call your-chat-model-id "Give me three concise project naming ideas."
 ```
 
 ```bash
-uv run just-prompt call gpt-image-2 "A crisp square illustration of a compact home lab desk, warm morning light, no text."
+uv run just-prompt call your-image-model-id --category image "A crisp square illustration of a compact home lab desk, warm morning light, no text."
 ```
 
 ```bash
-uv run just-prompt call mimo-v2.5-tts --text "请用自然旁白语气朗读这段家庭档案说明。"
+uv run just-prompt call your-speech-model-id --category speech --text "Read this in a calm narration voice."
 ```
 
 ```bash
-uv run just-prompt call grok-4.20-multi-agent-xhigh --query "Find recent privacy-minded local AI tooling for home lab operators. Give three concise bullets with dates."
+uv run just-prompt call your-search-model-id --category search --query "Find recent privacy-minded local AI tooling for home lab operators. Give three concise bullets with dates."
 ```
 
 Text adapter parameters:
@@ -609,7 +346,7 @@ Image adapter parameters:
 
 - Primary input: positional input, `--prompt`, `--prompt-file`, or stdin.
 - Output: `--output-path` accepts a file path or directory; omitted paths default to `generated/<model>-<utc>.png`.
-- Generation: `--size` (project default `4k`), `--quality` (default `auto`), `--n` (default `1`), `--background`, `--moderation`, `--output-format`, `--output-compression`.
+- Generation: `--size`, `--quality`, `--n`, `--background`, `--moderation`, `--output-format`, `--output-compression`.
 - Gateway: `--base-url`, `--api-key`, `--timeout`, `--media-download-timeout`, `--payload`, `--options`.
 - The command returns only after image data or image URLs have been saved as local files.
 
@@ -619,34 +356,6 @@ Search adapter parameters:
 - Optional: `--system-prompt`, `--system-prompt-file`, `--temperature`, `--top-p`, `--max-tokens`, `--search-parameters`.
 - Gateway: `--base-url`, `--api-key`, `--timeout`, `--payload`, `--options`.
 - `--max-tokens` is a hard output-length cap; omit it for normal full-answer behavior.
-
-```json
-{
-  "model": "unifuncs-web-search",
-  "protocol": "unifuncs:web-search",
-  "payload": { "query": "Model Context Protocol", "count": 5 }
-}
-```
-
-```json
-{
-  "model": "bocha-web-search",
-  "protocol": "bocha:web-search",
-  "payload": { "query": "Alibaba 2024 ESG report", "count": 10 }
-}
-```
-
-`list_gateway_models` with `detailed=true` returns each model's `supported_protocols`. The server uses this metadata for `auto` protocol selection, and clients can inspect it when they want to override the default.
-
-When you already know the protocol, pass it explicitly:
-
-```json
-{
-  "model": "gemini-2.5-pro",
-  "protocol": "gemini:generate-content",
-  "payload": { "prompt": "Explain MCP in one paragraph." }
-}
-```
 
 ## Features
 
@@ -704,8 +413,9 @@ model names as-is.
 ## Claude Code Installation
 > In all these examples, replace the directory with the path to the just-prompt directory.
 
-Default models are set in `just-prompt.config.json` (`gateway:glm-4.7` in this
-project) unless you pass `--default-models`.
+Default models are set in `just-prompt.config.json` unless you pass
+`--default-models`. Prefer editing `default_models` in the config file for
+normal use; keep the CLI flag for temporary overrides.
 
 If you use Claude Code right out of the repository, `.mcp.json` only describes
 how to launch the MCP server. Non-secret app settings live in
@@ -759,7 +469,7 @@ With a custom default gateway model:
 ```
 {
     "command": "uv",
-    "args": ["--directory", ".", "run", "just-prompt", "--default-models", "gateway:qwen3-max"]
+    "args": ["--directory", ".", "run", "just-prompt", "--default-models", "gateway:your-primary-model-id"]
 }
 ```
 
@@ -768,7 +478,7 @@ With multiple default models:
 ```
 {
     "command": "uv",
-    "args": ["--directory", ".", "run", "just-prompt", "--default-models", "gateway:glm-4.7,gateway:qwen3-max,gateway:deepseek-v3.2"]
+    "args": ["--directory", ".", "run", "just-prompt", "--default-models", "gateway:your-primary-model-id,gateway:your-review-model-id"]
 }
 ```
 
@@ -785,13 +495,13 @@ claude mcp add just-prompt -s project \
 claude mcp add just-prompt -s project \
   -- \
   uv --directory . \
-  run just-prompt --default-models "gateway:qwen3-max"
+  run just-prompt --default-models "gateway:your-primary-model-id"
 
 # With multiple default models
 claude mcp add just-prompt -s user \
   -- \
   uv --directory . \
-  run just-prompt --default-models "gateway:glm-4.7,gateway:qwen3-max,gateway:deepseek-v3.2"
+  run just-prompt --default-models "gateway:your-primary-model-id,gateway:your-review-model-id"
 ```
 
 
