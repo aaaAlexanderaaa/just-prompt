@@ -1,15 +1,16 @@
 <purpose>
     Self-contained prompt template for grok-4.20-multi-agent-xhigh deep research, for use
-    with the prompt_from_file tool. Canonical tool description and parameter guidance live
-    in src/just_prompt/server.py (GROK_4_20_MULTI_AGENT_XHIGH Tool + GrokSearchSchema); this
-    file is the file-prompt variant. Update both surfaces in lockstep to avoid drift.
+    with the prompt_from_file tool, or as guidance for the MCP tool declared via
+    `gateway_model_tools.grok_4_20_multi_agent_xhigh` in just-prompt config (category
+    "search", schema GatewaySearchSchema). Update this file in lockstep with the
+    declared tool description to avoid drift.
 </purpose>
 
 <usage_notes>
     - Non-streaming and slow. Use it when current external evidence quality matters and
       latency is acceptable. For streaming-friendly quick lookups, use a normal chat model.
     - Fallback chain when this model is unreachable or times out:
-      grok_research -> Exa -> Bocha -> default web search.
+      grok_research -> Exa -> default web search.
     - Prefer English prompts for stronger consistency; ask explicitly for publication
       dates and source names, and instruct the model to separate verified facts from
       inference. Ask for a fixed output structure so the result is downstream-parseable.
