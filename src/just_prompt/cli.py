@@ -40,7 +40,6 @@ DEFAULT_MODEL_CATEGORY_MAP = {
     "minimax-speech-2.8-turbo": CATEGORY_SPEECH,
     "minimax-m3:free": CATEGORY_TEXT,
     "gpt-image-2": CATEGORY_IMAGE,
-    "grok-4.20-multi-agent-xhigh": CATEGORY_SEARCH,
 }
 
 class DefaultsHelpFormatter(argparse.ArgumentDefaultsHelpFormatter):

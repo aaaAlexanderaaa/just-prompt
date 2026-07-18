@@ -202,10 +202,10 @@ def test_configured_gateway_model_tools_normalizes_and_skips_disabled():
         {
             "gateway_model_tools": [
                 {
-                    "name": "deep_research",
-                    "model": "grok_4_20_multi_agent_xhigh",
-                    "category": "SEARCH",
-                    "description": "  Search deeply.  ",
+                    "name": "image_tool",
+                    "model": "gpt_image_2",
+                    "category": "IMAGE",
+                    "description": "  Generate images.  ",
                 },
                 {
                     "name": "hidden_tool",
@@ -219,10 +219,10 @@ def test_configured_gateway_model_tools_normalizes_and_skips_disabled():
 
     assert tools == [
         {
-            "name": "deep_research",
-            "model": "grok-4.20-multi-agent-xhigh",
-            "category": "search",
-            "description": "Search deeply.",
+            "name": "image_tool",
+            "model": "gpt-image-2",
+            "category": "image",
+            "description": "Generate images.",
         }
     ]
 
@@ -255,11 +255,11 @@ def test_configured_gateway_model_categories_from_tool_declarations():
             "gateway_model_tools": [
                 {
                     "name": "search_tool",
-                    "model": "grok-4.20-multi-agent-xhigh",
+                    "model": "deep-research-v1",
                     "category": "search",
                 }
             ]
         }
     )
 
-    assert categories == {"grok-4.20-multi-agent-xhigh": "search"}
+    assert categories == {"deep-research-v1": "search"}

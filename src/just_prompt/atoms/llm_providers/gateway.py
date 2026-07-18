@@ -213,8 +213,6 @@ def _inferred_protocols_from_record(model_record: dict[str, Any]) -> list[str]:
         return ["openai:chat-completions"]
     if model_id == "gpt-image-2" or model_id.startswith("gpt-image-"):
         return ["openai:image-generations"]
-    if model_id == "grok-4.20-multi-agent-xhigh":
-        return ["openai:chat-completions"]
 
     if "openai" in endpoint_types:
         if "image" in model_id:

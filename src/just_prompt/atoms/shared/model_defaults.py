@@ -20,7 +20,6 @@ MODEL_ID_ALIASES = {
     "minimax_speech_2_8_turbo": "minimax-speech-2.8-turbo",
     "minimax_m3_free": "minimax-m3:free",
     "gpt_image_2": "gpt-image-2",
-    "grok_4_20_multi_agent_xhigh": "grok-4.20-multi-agent-xhigh",
 }
 
 

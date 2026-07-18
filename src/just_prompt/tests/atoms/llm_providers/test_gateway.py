@@ -122,7 +122,7 @@ def test_supported_protocols_from_record_accepts_common_metadata_shapes(
         ),
         (
             {
-                "id": "grok-4.20-multi-agent-xhigh",
+                "id": "deep-research-v1",
                 "supported_endpoint_types": ["openai"],
             },
             ["openai:chat-completions"],

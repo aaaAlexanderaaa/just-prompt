@@ -18,7 +18,6 @@ MIMO_V2_5_TTS_MODEL = "mimo-v2.5-tts"
 MINIMAX_SPEECH_2_8_TURBO_MODEL = "minimax-speech-2.8-turbo"
 MINIMAX_M3_FREE_MODEL = "minimax-m3:free"
 GPT_IMAGE_2_MODEL = "gpt-image-2"
-GROK_4_20_MULTI_AGENT_XHIGH_MODEL = "grok-4.20-multi-agent-xhigh"
 
 MINIMAX_TTS_PROTOCOL = "minimax:t2a_v2"
 OPENAI_CHAT_PROTOCOL = "openai:chat-completions"
@@ -602,28 +601,4 @@ def ask_gateway_search_model(
         options=options,
         default_timeout=default_timeout,
         defaults_category="search",
-    )
-
-
-def ask_grok_4_20_multi_agent_xhigh(
-    *,
-    query: str,
-    system_prompt: str | None = None,
-    temperature: float | None = None,
-    max_tokens: int | None = None,
-    top_p: float | None = None,
-    search_parameters: dict[str, Any] | None = None,
-    payload: dict[str, Any] | None = None,
-    options: dict[str, Any] | None = None,
-) -> str:
-    return ask_gateway_search_model(
-        GROK_4_20_MULTI_AGENT_XHIGH_MODEL,
-        query=query,
-        system_prompt=system_prompt,
-        temperature=temperature,
-        max_tokens=max_tokens,
-        top_p=top_p,
-        search_parameters=search_parameters,
-        payload=payload,
-        options=options,
     )
