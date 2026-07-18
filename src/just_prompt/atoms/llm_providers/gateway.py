@@ -6,10 +6,12 @@ Set gateway.base_url in just-prompt.config.json and MODEL_GATEWAY_API_KEY in
 endpoints below. Environment variables can still override config at runtime.
 """
 
+import base64
 import json
 import logging
 import os
 from collections.abc import Iterable
+from pathlib import Path
 from typing import Any
 from urllib import error, request
 
@@ -103,7 +105,14 @@ DEFAULT_PROTOCOL_PRIORITY = (
     "unifuncs:web-reader",
 )
 
-REQUEST_OPTION_KEYS = {"api_key", "base_url", "timeout", "strict_model_protocol"}
+REQUEST_OPTION_KEYS = {
+    "api_key",
+    "base_url",
+    "timeout",
+    "strict_model_protocol",
+    "response_output_path",
+    "raw_response_path",
+}
 TOKEN_LIMIT_KEYS = {"max_tokens", "max_completion_tokens", "max_output_tokens"}
 DEFAULT_MODEL_CALL_TIMEOUT = 900.0
 
@@ -544,6 +553,95 @@ def _decode_response(raw: bytes) -> Any:
         return text
 
 
+def _response_secret_values() -> tuple[str, ...]:
+    values = []
+    for name in (*API_KEY_ENV_NAMES, "TOKENDANCE_TOKEN"):
+        value = os.environ.get(name)
+        if value and value not in values:
+            values.append(value)
+    return tuple(values)
+
+
+def _response_json_value(value: Any, secrets: tuple[str, ...]) -> Any:
+    """Make a gateway response JSON-safe while removing configured credentials."""
+
+    sensitive_keys = {
+        "api-key",
+        "api_key",
+        "apikey",
+        "authorization",
+        "access_token",
+        "refresh_token",
+        "id_token",
+    }
+    if isinstance(value, dict):
+        result = {}
+        for key, nested in value.items():
+            normalized_key = str(key).strip().lower()
+            result[str(key)] = (
+                "[REDACTED]"
+                if normalized_key in sensitive_keys
+                else _response_json_value(nested, secrets)
+            )
+        return result
+    if isinstance(value, (list, tuple)):
+        return [_response_json_value(item, secrets) for item in value]
+    if isinstance(value, bytes):
+        return {
+            "_response_type": "bytes",
+            "base64": base64.b64encode(value).decode("ascii"),
+            "byte_count": len(value),
+        }
+    if isinstance(value, str):
+        redacted = value
+        for secret in secrets:
+            redacted = redacted.replace(secret, "[REDACTED]")
+        return redacted
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    return repr(value)
+
+
+def persist_protocol_response(
+    response: Any,
+    output_path: str | os.PathLike[str],
+    *,
+    model: str,
+    protocol: str,
+) -> Path:
+    """Persist a response-only diagnostic artifact with restrictive permissions.
+
+    The artifact deliberately contains no request payload or headers. Configured API
+    keys are removed defensively in case an upstream service echoes one back.
+    """
+
+    path = Path(output_path).expanduser().resolve()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    artifact = {
+        "schema_version": 1,
+        "model": model,
+        "protocol": protocol,
+        "response": _response_json_value(response, _response_secret_values()),
+    }
+    encoded = (json.dumps(artifact, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+    temporary_path = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    descriptor = os.open(temporary_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(encoded)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_path, path)
+        os.chmod(path, 0o600)
+    except Exception:
+        try:
+            temporary_path.unlink()
+        except FileNotFoundError:
+            pass
+        raise
+    return path
+
+
 def gateway_request(
     path: str,
     *,
@@ -611,6 +709,9 @@ def chat_completion(
     api_key = options.pop("api_key", None)
     base_url = options.pop("base_url", None)
     timeout = float(options.pop("timeout", DEFAULT_MODEL_CALL_TIMEOUT))
+    response_output_path = options.pop("response_output_path", None)
+    raw_response_path = options.pop("raw_response_path", None)
+    response_output_path = response_output_path or raw_response_path
 
     payload = {"model": model, "messages": messages}
     payload.update(options)
@@ -624,7 +725,45 @@ def chat_completion(
     )
     if not isinstance(response, dict):
         raise ValueError("Expected JSON response from chat completions")
+    if response_output_path:
+        persist_protocol_response(
+            response,
+            response_output_path,
+            model=model,
+            protocol="openai:chat-completions",
+        )
     return response
+
+
+def _openai_message_content_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, dict):
+        text = content.get("text")
+        if isinstance(text, str):
+            return text
+        if isinstance(text, dict) and isinstance(text.get("value"), str):
+            return text["value"]
+        return ""
+    if not isinstance(content, list):
+        return ""
+
+    parts = []
+    for part in content:
+        if isinstance(part, str):
+            parts.append(part)
+            continue
+        if not isinstance(part, dict):
+            continue
+        part_type = str(part.get("type") or "").lower()
+        if part_type and part_type not in {"text", "output_text"}:
+            continue
+        text = part.get("text")
+        if isinstance(text, str):
+            parts.append(text)
+        elif isinstance(text, dict) and isinstance(text.get("value"), str):
+            parts.append(text["value"])
+    return "".join(parts)
 
 
 def extract_protocol_text(response: Any, protocol: str) -> str:
@@ -636,7 +775,8 @@ def extract_protocol_text(response: Any, protocol: str) -> str:
 
     if protocol == "openai:chat-completions":
         try:
-            return response["choices"][0]["message"]["content"] or ""
+            message = response["choices"][0]["message"]
+            return _openai_message_content_text(message.get("content"))
         except (KeyError, IndexError, TypeError):
             return json.dumps(response, ensure_ascii=False)
 
@@ -733,6 +873,9 @@ def call_protocol(
     api_key = options.pop("api_key", None)
     base_url = options.pop("base_url", None)
     timeout = float(options.pop("timeout", 120.0))
+    response_output_path = options.pop("response_output_path", None)
+    raw_response_path = options.pop("raw_response_path", None)
+    response_output_path = response_output_path or raw_response_path
     strict_model_protocol = _option_bool(options.pop("strict_model_protocol", None), True)
     normalized_protocol = (protocol or "auto").strip()
     records = _model_details_for_selection(
@@ -767,7 +910,7 @@ def call_protocol(
     elif "{model}" in path:
         path = path.format(model=model)
 
-    return gateway_request(
+    response = gateway_request(
         path,
         method=method,
         payload=request_payload,
@@ -776,6 +919,14 @@ def call_protocol(
         api_key=api_key,
         timeout=timeout,
     )
+    if response_output_path:
+        persist_protocol_response(
+            response,
+            response_output_path,
+            model=model,
+            protocol=protocol,
+        )
+    return response
 
 
 def get_task(protocol: str, task_id: str, options: dict[str, Any] | None = None) -> Any:

@@ -2,6 +2,7 @@
 Tests for the generic gateway provider.
 """
 
+import json
 import os
 
 import pytest
@@ -433,6 +434,78 @@ def test_call_protocol_strict_false_skips_protocol_metadata_check(monkeypatch):
         "model": "embedding-model",
         "messages": [{"role": "user", "content": "hello"}],
     }
+
+
+def test_call_protocol_persists_response_only_diagnostic(monkeypatch, tmp_path):
+    response = {
+        "id": "chatcmpl-test",
+        "choices": [
+            {
+                "finish_reason": "length",
+                "message": {
+                    "content": "",
+                    "reasoning_content": "private model reasoning",
+                    "api_key": "test-key",
+                },
+            }
+        ],
+        "usage": {"completion_tokens": 128},
+    }
+    monkeypatch.setattr(gateway, "gateway_request", lambda *args, **kwargs: response)
+    output_path = tmp_path / "response.json"
+
+    returned = gateway.call_protocol(
+        "kimi-k3",
+        "openai:chat-completions",
+        payload={"prompt": "hello"},
+        options={
+            "strict_model_protocol": False,
+            "response_output_path": str(output_path),
+        },
+    )
+
+    assert returned == response
+    artifact = json.loads(output_path.read_text(encoding="utf-8"))
+    assert artifact["model"] == "kimi-k3"
+    assert artifact["protocol"] == "openai:chat-completions"
+    assert artifact["response"]["choices"][0]["finish_reason"] == "length"
+    assert artifact["response"]["choices"][0]["message"]["reasoning_content"] == (
+        "private model reasoning"
+    )
+    assert artifact["response"]["choices"][0]["message"]["api_key"] == "[REDACTED]"
+    assert "test-key" not in output_path.read_text(encoding="utf-8")
+    assert output_path.stat().st_mode & 0o077 == 0
+
+
+def test_extract_protocol_text_supports_openai_content_parts():
+    response = {
+        "choices": [
+            {
+                "message": {
+                    "content": [
+                        {"type": "text", "text": "first"},
+                        {"type": "output_text", "text": {"value": " second"}},
+                        {"type": "reasoning", "text": "hidden"},
+                    ]
+                }
+            }
+        ]
+    }
+
+    assert gateway.extract_protocol_text(response, "openai:chat-completions") == "first second"
+
+
+def test_extract_protocol_text_never_promotes_reasoning_to_answer():
+    response = {
+        "choices": [
+            {
+                "finish_reason": "length",
+                "message": {"content": "", "reasoning_content": "unfinished reasoning"},
+            }
+        ]
+    }
+
+    assert gateway.extract_protocol_text(response, "openai:chat-completions") == ""
 
 
 def test_prompt_payload_override_does_not_keep_seed_prompt_with_messages(monkeypatch):

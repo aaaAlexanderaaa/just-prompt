@@ -355,6 +355,20 @@ Text adapter parameters:
 - Gateway plumbing: `--base-url`, `--api-key`, `--timeout`, `--payload`, `--options`.
 - `--max-tokens` is a hard output-length cap; omit it for normal full-answer behavior.
 
+To preserve a response-only diagnostic artifact, pass `response_output_path`
+through `--options`:
+
+```bash
+uv run just-prompt call your-chat-model-id \
+  --options '{"response_output_path":"/tmp/model-response.json"}' \
+  "Give me one concise answer."
+```
+
+The JSON file records the model, protocol, and complete gateway response with
+mode `0600`. It does not contain the request prompt or headers, and configured
+API credentials are redacted defensively. Reasoning fields are preserved for
+private diagnostics but are never promoted to the returned final answer.
+
 Speech adapter parameters:
 
 - Primary input: positional input, `--text`, `--text-file`, or stdin.
