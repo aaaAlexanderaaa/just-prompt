@@ -360,14 +360,17 @@ through `--options`:
 
 ```bash
 uv run just-prompt call your-chat-model-id \
-  --options '{"response_output_path":"/tmp/model-response.json"}' \
+  --options '{"response_output_path":"generated/model-response.json"}' \
   "Give me one concise answer."
 ```
 
 The JSON file records the model, protocol, and complete gateway response with
-mode `0600`. It does not contain the request prompt or headers, and configured
-API credentials are redacted defensively. Reasoning fields are preserved for
-private diagnostics but are never promoted to the returned final answer.
+mode `0600`. The output path is confined to the configured file root, including
+when supplied through an MCP tool's `options` object. It does not contain the
+request prompt or headers, and API credentials supplied through either the
+environment or `options.api_key` are redacted defensively. Reasoning fields are
+preserved for private diagnostics but are never promoted to the returned final
+answer.
 
 Speech adapter parameters:
 

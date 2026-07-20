@@ -17,6 +17,8 @@ from urllib import error, request
 
 from dotenv import load_dotenv
 
+from ..shared.file_access import resolve_checked_path
+
 load_dotenv()
 
 logger = logging.getLogger(__name__)
@@ -551,8 +553,14 @@ def _decode_response(raw: bytes) -> Any:
         return text
 
 
-def _response_secret_values() -> tuple[str, ...]:
-    values = []
+def _response_secret_values(*additional: Any) -> tuple[str, ...]:
+    values: list[str] = []
+    for value in additional:
+        if value is None:
+            continue
+        text = str(value)
+        if text and text not in values:
+            values.append(text)
     for name in (*API_KEY_ENV_NAMES, "TOKENDANCE_TOKEN"):
         value = os.environ.get(name)
         if value and value not in values:
@@ -606,20 +614,21 @@ def persist_protocol_response(
     *,
     model: str,
     protocol: str,
+    api_key: str | None = None,
 ) -> Path:
     """Persist a response-only diagnostic artifact with restrictive permissions.
 
-    The artifact deliberately contains no request payload or headers. Configured API
-    keys are removed defensively in case an upstream service echoes one back.
+    The artifact deliberately contains no request payload or headers. Configured and
+    explicit API keys are removed defensively if an upstream service echoes one back.
     """
 
-    path = Path(output_path).expanduser().resolve()
+    path = resolve_checked_path(str(output_path), must_exist=False)
     path.parent.mkdir(parents=True, exist_ok=True)
     artifact = {
         "schema_version": 1,
         "model": model,
         "protocol": protocol,
-        "response": _response_json_value(response, _response_secret_values()),
+        "response": _response_json_value(response, _response_secret_values(api_key)),
     }
     encoded = (json.dumps(artifact, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
     temporary_path = path.with_name(f".{path.name}.{os.getpid()}.tmp")
@@ -729,6 +738,7 @@ def chat_completion(
             response_output_path,
             model=model,
             protocol="openai:chat-completions",
+            api_key=api_key,
         )
     return response
 
@@ -923,6 +933,7 @@ def call_protocol(
             response_output_path,
             model=model,
             protocol=protocol,
+            api_key=api_key,
         )
     return response
 

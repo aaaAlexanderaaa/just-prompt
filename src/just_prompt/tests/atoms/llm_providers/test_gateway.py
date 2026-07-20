@@ -437,8 +437,10 @@ def test_call_protocol_strict_false_skips_protocol_metadata_check(monkeypatch):
 
 
 def test_call_protocol_persists_response_only_diagnostic(monkeypatch, tmp_path):
+    explicit_api_key = "explicit-gateway-secret"
     response = {
         "id": "chatcmpl-test",
+        "echo": f"upstream echoed {explicit_api_key}",
         "choices": [
             {
                 "finish_reason": "length",
@@ -452,6 +454,7 @@ def test_call_protocol_persists_response_only_diagnostic(monkeypatch, tmp_path):
         "usage": {"completion_tokens": 128},
     }
     monkeypatch.setattr(gateway, "gateway_request", lambda *args, **kwargs: response)
+    monkeypatch.setenv("JUST_PROMPT_FILE_ROOT", str(tmp_path))
     output_path = tmp_path / "response.json"
 
     returned = gateway.call_protocol(
@@ -459,6 +462,7 @@ def test_call_protocol_persists_response_only_diagnostic(monkeypatch, tmp_path):
         "openai:chat-completions",
         payload={"prompt": "hello"},
         options={
+            "api_key": explicit_api_key,
             "strict_model_protocol": False,
             "response_output_path": str(output_path),
         },
@@ -473,8 +477,37 @@ def test_call_protocol_persists_response_only_diagnostic(monkeypatch, tmp_path):
         "private model reasoning"
     )
     assert artifact["response"]["choices"][0]["message"]["api_key"] == "[REDACTED]"
-    assert "test-key" not in output_path.read_text(encoding="utf-8")
+    artifact_text = output_path.read_text(encoding="utf-8")
+    assert "test-key" not in artifact_text
+    assert explicit_api_key not in artifact_text
+    assert artifact["response"]["echo"] == "upstream echoed [REDACTED]"
     assert output_path.stat().st_mode & 0o077 == 0
+
+
+@pytest.mark.parametrize("option_name", ["response_output_path", "raw_response_path"])
+def test_call_protocol_confines_diagnostic_paths_to_file_root(
+    monkeypatch,
+    tmp_path,
+    option_name,
+):
+    allowed_root = tmp_path / "allowed"
+    allowed_root.mkdir()
+    forbidden_path = tmp_path / "outside" / "response.json"
+    monkeypatch.setenv("JUST_PROMPT_FILE_ROOT", str(allowed_root))
+    monkeypatch.setattr(gateway, "gateway_request", lambda *args, **kwargs: {"ok": True})
+
+    with pytest.raises(ValueError, match="outside the configured file access root"):
+        gateway.call_protocol(
+            "kimi-k3",
+            "openai:chat-completions",
+            payload={"prompt": "hello"},
+            options={
+                "strict_model_protocol": False,
+                option_name: str(forbidden_path),
+            },
+        )
+
+    assert not forbidden_path.exists()
 
 
 def test_extract_protocol_text_supports_openai_content_parts():
